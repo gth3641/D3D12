@@ -3,8 +3,15 @@
 
 bool DXContext::Init()
 {
+	HRESULT hr = CreateDXGIFactory2(0, IID_PPV_ARGS(&m_dxgiFactory));
+	if (FAILED(hr))
+	{
+		std::cerr << "Failed to create Factory device. " << hr << std::endl;
+		return false;
+	}
+
 	// 1. Create the D3D12 device
-	HRESULT hr = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device));
+	hr = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&m_device));
 	if (FAILED(hr))
 	{
 		std::cerr << "Failed to create D3D12 device. " << hr << std::endl;
@@ -76,12 +83,17 @@ void DXContext::Shutdown()
 		CloseHandle(m_fenceEvent);
 	}
 	m_fenceEvent = nullptr;
+	m_fence.Release();
+	m_fence = nullptr;
 
 	m_cmdQueue.Release();
 	m_cmdQueue = nullptr;
 
 	m_device.Release();
 	m_device = nullptr;
+
+	m_dxgiFactory.Release();
+	m_dxgiFactory = nullptr;
 }
 
 void DXContext::SignalAndWait()
@@ -103,12 +115,12 @@ void DXContext::SignalAndWait()
 
 }
 
-ID3D12GraphicsCommandList6* DXContext::InitCommandList()
+ID3D12GraphicsCommandList7* DXContext::InitCommandList()
 {
 	m_cmdAllocator->Reset();
 	m_cmdList->Reset(m_cmdAllocator, nullptr);
 
-	return nullptr;
+	return m_cmdList;
 }
 
 void DXContext::ExecuteCommandList()
