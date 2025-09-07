@@ -13,6 +13,6 @@
 #include <dxgidebug.h>
 #endif //_DEBUG
 
-
+#include <wincodec.h>
 
 

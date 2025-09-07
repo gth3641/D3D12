@@ -23,6 +23,9 @@ public:
 	inline bool ShouldResize() const { return m_shouldResize; }
 	inline bool IsFullscreen() const { return m_isFullscreen; }
 
+	inline UINT GetWidth() const { return m_width; }
+	inline UINT GetHeight() const { return m_height; }
+
 	static constexpr size_t FrameCount = 2;
 	static constexpr size_t GetFrameCount()
 	{
@@ -50,7 +53,7 @@ private:
 	ComPointer<ID3D12Resource2> m_buffers[FrameCount];
 	size_t m_currentBufferIndex = 0;
 
-	ComPointer<ID3D12DescriptorHeap> m_rtvDescHeap;
+	ComPointer<ID3D12DescriptorHeap> m_rtvDescHeap = nullptr;
 	D3D12_CPU_DESCRIPTOR_HANDLE m_rtvHandles[FrameCount];
 
 public: // Singleton pattern to ensure only one instance exists 
