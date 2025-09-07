@@ -44,7 +44,7 @@ bool DXWindow::Init()
 	m_window = CreateWindowExW(
 		WS_EX_OVERLAPPEDWINDOW | WS_EX_APPWINDOW, 
 		(LPCWSTR)m_wndClass, 
-		L"D3D12Ez", 
+		L"D3D12", 
 		WS_OVERLAPPEDWINDOW | WS_VISIBLE, 
 		monitorInfo.rcWork.left + 100,
 		monitorInfo.rcWork.top + 100,

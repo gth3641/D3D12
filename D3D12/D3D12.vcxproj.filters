@@ -13,6 +13,9 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="소스 파일\Shader">
+      <UniqueIdentifier>{7de21762-fc63-4ad4-8fd3-f4aeb672d792}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="D3D12.cpp">
@@ -31,6 +34,9 @@
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="Support\ImageLoader.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="Manager\DirectXManager.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>
@@ -59,21 +65,32 @@
     <ClInclude Include="Util\LoggingProvider.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="Manager\DirectXManager.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Util\Util.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <FxCompile Include="Shaders\RootSignature.hlsl">
+      <Filter>소스 파일\Shader</Filter>
+    </FxCompile>
     <FxCompile Include="Shaders\PixelShader.hlsl">
-      <Filter>소스 파일</Filter>
+      <Filter>소스 파일\Shader</Filter>
     </FxCompile>
     <FxCompile Include="Shaders\VertexShader.hlsl">
-      <Filter>소스 파일</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\RootSignature.hlsl">
-      <Filter>소스 파일</Filter>
+      <Filter>소스 파일\Shader</Filter>
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Pipeline.hlsli">
-      <Filter>소스 파일</Filter>
+      <Filter>소스 파일\Shader</Filter>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Resources\TEX_Noise.png">
+      <Filter>리소스 파일</Filter>
+    </Image>
   </ItemGroup>
 </Project>

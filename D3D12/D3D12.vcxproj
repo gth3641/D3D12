@@ -137,6 +137,7 @@
     <ClCompile Include="D3D12.cpp" />
     <ClCompile Include="D3D\DXContext.cpp" />
     <ClCompile Include="DebugD3D12\DebugLayer.cpp" />
+    <ClCompile Include="Manager\DirectXManager.cpp" />
     <ClCompile Include="Support\ImageLoader.cpp" />
     <ClCompile Include="Support\Shader.cpp" />
     <ClCompile Include="Support\Window.cpp" />
@@ -144,12 +145,14 @@
   <ItemGroup>
     <ClInclude Include="D3D\DXContext.h" />
     <ClInclude Include="DebugD3D12\DebugLayer.h" />
+    <ClInclude Include="Manager\DirectXManager.h" />
     <ClInclude Include="Support\ComPointer.h" />
     <ClInclude Include="Support\ImageLoader.h" />
     <ClInclude Include="Support\Shader.h" />
     <ClInclude Include="Support\Window.h" />
     <ClInclude Include="Support\WinInclude.h" />
     <ClInclude Include="Util\LoggingProvider.h" />
+    <ClInclude Include="Util\Util.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Shaders\PixelShader.hlsl">
@@ -175,6 +178,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Pipeline.hlsli" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Resources\TEX_Noise.png" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

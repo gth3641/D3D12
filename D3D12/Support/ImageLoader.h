@@ -8,21 +8,21 @@
 
 #define __ImageLoader_CAR(expr) do { if(!(expr)) { return false; } } while(false)
 
+struct ImageData
+{
+	std::vector<char> data;
+	uint32_t width = 0;
+	uint32_t height = 0;
+	uint32_t bpp = 0;
+	uint32_t cc = 0;
+
+	GUID			wicPixelFormat;
+	DXGI_FORMAT		giPixelFormat;
+};
+
 class ImageLoader
 {
 public:
-	struct ImageData
-	{
-		std::vector<char> data;
-		uint32_t width = 0;
-		uint32_t height = 0;
-		uint32_t bpp = 0;
-		uint32_t cc = 0;
-
-		GUID			wicPixelFormat;
-		DXGI_FORMAT		giPixelFormat;
-	};
-
 	static bool LoadImageFromDisk(const std::filesystem::path& imagePath, ImageData& data);
 
 private:

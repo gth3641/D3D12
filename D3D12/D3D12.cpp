@@ -6,9 +6,12 @@
 #include "Support/Shader.h"
 #include "Support/Window.h"
 
+#include "Manager/DirectXManager.h"
+
 #include "DebugD3D12/DebugLayer.h"
 
 #include "D3D/DXContext.h"
+#include "Util/Util.h"
 
 void pukeColor(float* color)
 {
@@ -34,29 +37,10 @@ int main()
 
 	if (DX_CONTEXT.Init() == true && DX_WINDOW.Init() == true)
 	{
-
-		D3D12_HEAP_PROPERTIES hpUpload{};
-		hpUpload.Type = D3D12_HEAP_TYPE_UPLOAD;
-		hpUpload.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-		hpUpload.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-		hpUpload.CreationNodeMask = 0;
-		hpUpload.VisibleNodeMask = 0;
-
-		D3D12_HEAP_PROPERTIES hpDefault{};
-		hpDefault.Type = D3D12_HEAP_TYPE_DEFAULT;
-		hpDefault.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-		hpDefault.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-		hpDefault.CreationNodeMask = 0;
-		hpDefault.VisibleNodeMask = 0;
+		D3D12_HEAP_PROPERTIES hpUpload = DirectXManager::GetHeapUploadProperties();
+		D3D12_HEAP_PROPERTIES hpDefault = DirectXManager::GetDefaultUploadProperties();
 
 		// === Vertex Data ===
-
-		struct Vertex
-		{
-			float x, y;
-			float u, v;
-		};
-
 		Vertex verticies[] = 
 		{
 			{ -1.f, -1.f, 0.f, 1.f },
@@ -72,56 +56,21 @@ int main()
 		};
 
 		// === Texture Data ===
-		ImageLoader::ImageData textureData;
-		ImageLoader::LoadImageFromDisk("./TEX_Noise.png", textureData);
+		ImageData textureData;
+		ImageLoader::LoadImageFromDisk("./Resources/TEX_Noise.png", textureData);
 		uint32_t textureStride = textureData.width * ((textureData.bpp + 7) / 8);
 		uint32_t textureSize = (textureData.height * textureStride);
 
 		// === Upload & Vertex Buffer
-		D3D12_RESOURCE_DESC rdv{};
-		rdv.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-		rdv.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
-		rdv.Width = 1024;
-		rdv.Height = 1;
-		rdv.DepthOrArraySize = 1;
-		rdv.MipLevels = 1;
-		rdv.Format = DXGI_FORMAT_UNKNOWN;
-		rdv.SampleDesc.Count = 1;
-		rdv.SampleDesc.Quality = 0;
-		rdv.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-		rdv.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-		D3D12_RESOURCE_DESC rdu{};
-		rdu.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-		rdu.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
-		rdu.Width = textureSize + 1024;
-		rdu.Height = 1;
-		rdu.DepthOrArraySize = 1;
-		rdu.MipLevels = 1;
-		rdu.Format = DXGI_FORMAT_UNKNOWN;
-		rdu.SampleDesc.Count = 1;
-		rdu.SampleDesc.Quality = 0;
-		rdu.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-		rdu.Flags = D3D12_RESOURCE_FLAG_NONE;
-
+		D3D12_RESOURCE_DESC rdv = DirectXManager::GetVertexResourceDesc();
+		D3D12_RESOURCE_DESC rdu = DirectXManager::GetUploadResourceDesc(textureSize); //< TODO: 이거 어느 상황에 필요한건지 체크
+		
 		ComPointer<ID3D12Resource2> uploadBuffer, vertexBuffer;
 		DX_CONTEXT.GetDevice()->CreateCommittedResource(&hpUpload, D3D12_HEAP_FLAG_NONE, &rdu, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&uploadBuffer));
 		DX_CONTEXT.GetDevice()->CreateCommittedResource(&hpDefault, D3D12_HEAP_FLAG_NONE, &rdv, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&vertexBuffer));
 		
 		// === Texture ===
-		D3D12_RESOURCE_DESC rdt{};
-		rdt.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-		rdt.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
-		rdt.Width = textureData.width;
-		rdt.Height = textureData.height;
-		rdt.DepthOrArraySize = 1;
-		rdt.MipLevels = 1;
-		rdt.Format = textureData.giPixelFormat;
-		rdt.SampleDesc.Count = 1;
-		rdt.SampleDesc.Quality = 0;
-		rdt.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-		rdt.Flags = D3D12_RESOURCE_FLAG_NONE;
-
+		D3D12_RESOURCE_DESC rdt = DirectXManager::GetTextureResourceDesc(textureData);
 		ComPointer<ID3D12Resource2> texture;
 		DX_CONTEXT.GetDevice()->CreateCommittedResource(&hpDefault, D3D12_HEAP_FLAG_NONE, &rdt, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&texture));
 
@@ -193,77 +142,8 @@ int main()
 		ComPointer<ID3D12RootSignature> rootSignature;
 		DX_CONTEXT.GetDevice()->CreateRootSignature(0, rootSignatureShader.GetBuffer(), rootSignatureShader.GetSize(), IID_PPV_ARGS(&rootSignature));
 
-
 		// === Pipeline State ===
-		D3D12_GRAPHICS_PIPELINE_STATE_DESC gfxPsod{};
-		gfxPsod.pRootSignature = rootSignature;
-		gfxPsod.InputLayout.NumElements = _countof(vertexLayout);
-		gfxPsod.InputLayout.pInputElementDescs = vertexLayout;
-		gfxPsod.IBStripCutValue = D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_DISABLED;
-		gfxPsod.VS.BytecodeLength = vertexShader.GetSize();
-		gfxPsod.VS.pShaderBytecode = vertexShader.GetBuffer();
-		gfxPsod.PS.BytecodeLength = pixelShader.GetSize();
-		gfxPsod.PS.pShaderBytecode = pixelShader.GetBuffer();
-		gfxPsod.DS.BytecodeLength = 0;
-		gfxPsod.DS.pShaderBytecode = nullptr;
-		gfxPsod.HS.BytecodeLength = 0;
-		gfxPsod.HS.pShaderBytecode = nullptr;
-		gfxPsod.GS.BytecodeLength = 0;
-		gfxPsod.GS.pShaderBytecode = nullptr;
-		gfxPsod.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-		gfxPsod.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-		gfxPsod.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-		gfxPsod.RasterizerState.FrontCounterClockwise = FALSE;
-		gfxPsod.RasterizerState.DepthBias = 0;
-		gfxPsod.RasterizerState.DepthBiasClamp = 0.0f;
-		gfxPsod.RasterizerState.SlopeScaledDepthBias = 0.f;
-		gfxPsod.RasterizerState.DepthClipEnable = FALSE;
-		gfxPsod.RasterizerState.MultisampleEnable = FALSE;
-		gfxPsod.RasterizerState.AntialiasedLineEnable = FALSE;
-		gfxPsod.RasterizerState.ForcedSampleCount = 0;
-
-		gfxPsod.StreamOutput.NumEntries = 0;
-		gfxPsod.StreamOutput.NumStrides = 0;
-		gfxPsod.StreamOutput.pBufferStrides = nullptr;
-		gfxPsod.StreamOutput.pSODeclaration = nullptr;
-		gfxPsod.StreamOutput.RasterizedStream = 0;
-		gfxPsod.NumRenderTargets = 1;
-		gfxPsod.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-		gfxPsod.DSVFormat = DXGI_FORMAT_UNKNOWN;
-		gfxPsod.BlendState.AlphaToCoverageEnable = FALSE;
-		gfxPsod.BlendState.IndependentBlendEnable = FALSE;
-		gfxPsod.BlendState.RenderTarget[0].BlendEnable = TRUE;
-		gfxPsod.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
-		gfxPsod.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_ZERO;
-		gfxPsod.BlendState.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-		gfxPsod.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ZERO;
-		gfxPsod.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
-		gfxPsod.BlendState.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-		gfxPsod.BlendState.RenderTarget[0].LogicOpEnable = FALSE;
-		gfxPsod.BlendState.RenderTarget[0].LogicOp = D3D12_LOGIC_OP_NOOP;
-		gfxPsod.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-		gfxPsod.DepthStencilState.DepthEnable = FALSE;
-		gfxPsod.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-		gfxPsod.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-		gfxPsod.DepthStencilState.StencilEnable = FALSE;
-		gfxPsod.DepthStencilState.StencilReadMask = 0;
-		gfxPsod.DepthStencilState.StencilWriteMask = 0;
-		gfxPsod.DepthStencilState.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-		gfxPsod.DepthStencilState.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-		gfxPsod.DepthStencilState.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
-		gfxPsod.DepthStencilState.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-		gfxPsod.DepthStencilState.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-		gfxPsod.DepthStencilState.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-		gfxPsod.DepthStencilState.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
-		gfxPsod.DepthStencilState.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-		gfxPsod.SampleMask = 0xFFFFFFFF; 
-		gfxPsod.SampleDesc.Count = 1;
-		gfxPsod.SampleDesc.Quality = 0;
-		gfxPsod.NodeMask = 0;
-		gfxPsod.CachedPSO.CachedBlobSizeInBytes = 0;
-		gfxPsod.CachedPSO.pCachedBlob = nullptr;
-		gfxPsod.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
-
+		D3D12_GRAPHICS_PIPELINE_STATE_DESC gfxPsod = DirectXManager::GetPipelineState(rootSignature, vertexLayout, _countof(vertexLayout), vertexShader, pixelShader);
 		ComPointer<ID3D12PipelineState> pso;
 		DX_CONTEXT.GetDevice()->CreateGraphicsPipelineState(&gfxPsod, IID_PPV_ARGS(&pso));
 
