@@ -2,6 +2,7 @@
 
 #include "Support/WinInclude.h"
 #include "Support/ComPointer.h"
+#include "Util/Util.h"
 
 #define DX_CONTEXT DXContext::Get()
 

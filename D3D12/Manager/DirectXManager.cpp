@@ -1,7 +1,6 @@
 #include "DirectXManager.h"
 
 #include "Support/Shader.h"
-#include "Support/ImageLoader.h"
 
 D3D12_HEAP_PROPERTIES DirectXManager::GetHeapUploadProperties()
 {
@@ -153,4 +152,206 @@ D3D12_RESOURCE_DESC DirectXManager::GetTextureResourceDesc(const ImageData& text
 	rdt.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	rdt.Flags = D3D12_RESOURCE_FLAG_NONE;
 	return rdt;
+}
+
+D3D12_TEXTURE_COPY_LOCATION DirectXManager::GetTextureSource(ComPointer<ID3D12Resource2>& uploadBuffer, ImageData& textureData, uint32_t textureStride)
+{
+	D3D12_TEXTURE_COPY_LOCATION txtcSrc;
+	txtcSrc.pResource = uploadBuffer;
+	txtcSrc.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+	txtcSrc.PlacedFootprint.Offset = 0;
+	txtcSrc.PlacedFootprint.Footprint.Width = textureData.width;
+	txtcSrc.PlacedFootprint.Footprint.Height = textureData.height;
+	txtcSrc.PlacedFootprint.Footprint.Depth = 1;
+	txtcSrc.PlacedFootprint.Footprint.RowPitch = textureStride;
+	txtcSrc.PlacedFootprint.Footprint.Format = textureData.giPixelFormat;
+
+	return txtcSrc;
+}
+
+D3D12_TEXTURE_COPY_LOCATION DirectXManager::GetTextureDestination(ComPointer<ID3D12Resource2>& texture)
+{
+	D3D12_TEXTURE_COPY_LOCATION txtcDst;
+	txtcDst.pResource = texture;
+	txtcDst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+	txtcDst.SubresourceIndex = 0;
+
+	return txtcDst;
+}
+
+D3D12_BOX DirectXManager::GetTextureSizeAsBox(const ImageData& textureData)
+{
+	D3D12_BOX textureSizeAsBox;
+	textureSizeAsBox.left = textureSizeAsBox.top = textureSizeAsBox.front = 0;
+	textureSizeAsBox.right = textureData.width;
+	textureSizeAsBox.bottom = textureData.height;
+	textureSizeAsBox.back = 1;
+
+	return textureSizeAsBox;
+}
+
+D3D12_VERTEX_BUFFER_VIEW DirectXManager::GetVertexBufferView(ComPointer<ID3D12Resource2>& vertexBuffer, uint32_t vertexCount, uint32_t vertexSize)
+{
+	D3D12_VERTEX_BUFFER_VIEW vbv{};
+	vbv.BufferLocation = vertexBuffer->GetGPUVirtualAddress();
+	vbv.SizeInBytes = vertexSize * vertexCount;
+	vbv.StrideInBytes = vertexSize;
+
+	return vbv;
+}
+
+
+bool DirectXManager::Init()
+{
+	SetVerticies();
+	SetVertexLayout();
+
+	SetTextureData();
+
+	UploadTextureBuffer();
+	CreateDescriptorHipForTexture();
+	CreateSRV();
+	UploadCPUResource();
+
+	InitShader();
+	return true;
+}
+
+
+void DirectXManager::Shutdown()
+{
+	m_VertexBuffer.Release();
+	m_UploadBuffer.Release();
+	m_Texture.Release();
+	m_Srvheap.Release();
+	m_RootSignature.Release();
+	m_PipelineStateObj.Release();
+}
+
+void DirectXManager::UploadGPUResource(ID3D12GraphicsCommandList7* cmdList)
+{
+	if (cmdList == nullptr)
+	{
+		return;
+	}
+
+	cmdList->CopyBufferRegion(GetVertexBuffer(), 0, GetUploadBuffer(), GetTextureSize(), 1024);
+
+	D3D12_BOX textureSizeAsBox = GetTextureSizeAsBox(GetTextureData());
+	D3D12_TEXTURE_COPY_LOCATION txtcSrc = GetTextureSource(GetUploadBuffer(), GetTextureData(), GetTextureStride());
+	D3D12_TEXTURE_COPY_LOCATION txtcDst = GetTextureDestination(GetTexture());
+
+	cmdList->CopyTextureRegion(&txtcDst, 0, 0, 0, &txtcSrc, &textureSizeAsBox);
+}
+
+void DirectXManager::SetVerticies()
+{
+	Vertex vertex1[] =
+	{
+		{ 0.f,  0.f, 0.0f, 0.f },
+		{ 0.f, 500.f, 0.f, 1.f },
+		{ 500.f, 500.f, 1.f, 1.f }
+	};
+
+	Vertex vertex2[] =
+	{
+		{ 0.f, 0.f, 0.f, 0.f },
+		{ 500.f, 0.f, 1.f, 0.f },
+		{ 500.f, 500.f, 1.f, 1.f }
+	};
+
+	RenderingObject.AddTriangle(vertex1, 3);
+	RenderingObject.AddTriangle(vertex2, 3);
+
+}
+
+void DirectXManager::SetVertexLayout()
+{
+	m_VertexLayout[0] = { "Position", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 };
+	m_VertexLayout[1] = { "Texcoord", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(float) * 2, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 };
+}
+
+void DirectXManager::SetTextureData()
+{
+	ImageLoader::LoadImageFromDisk("./Resources/TEX_Noise.png", m_TextureData);
+	m_TextureStride = m_TextureData.width * ((m_TextureData.bpp + 7) / 8);
+	m_TextureSize  = (m_TextureData.height * m_TextureStride);
+}
+
+void DirectXManager::UploadTextureBuffer()
+{
+	D3D12_HEAP_PROPERTIES hpUpload = GetHeapUploadProperties();
+	D3D12_HEAP_PROPERTIES hpDefault = GetDefaultUploadProperties();
+
+	D3D12_RESOURCE_DESC rdv = GetVertexResourceDesc();
+	D3D12_RESOURCE_DESC rdu = GetUploadResourceDesc(GetTextureSize()); //< TODO: 이거 어느 상황에 필요한건지 체크
+	D3D12_RESOURCE_DESC rdt = GetTextureResourceDesc(GetTextureData());
+
+	DX_CONTEXT.GetDevice()->CreateCommittedResource(&hpUpload, D3D12_HEAP_FLAG_NONE, &rdu, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&m_UploadBuffer));
+	DX_CONTEXT.GetDevice()->CreateCommittedResource(&hpDefault, D3D12_HEAP_FLAG_NONE, &rdv, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_VertexBuffer));
+	DX_CONTEXT.GetDevice()->CreateCommittedResource(&hpDefault, D3D12_HEAP_FLAG_NONE, &rdt, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_Texture));
+}
+
+void DirectXManager::CreateDescriptorHipForTexture()
+{
+	D3D12_DESCRIPTOR_HEAP_DESC dhd{};
+	dhd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	dhd.NumDescriptors = 8;
+	dhd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	dhd.NodeMask = 0;
+
+	DX_CONTEXT.GetDevice()->CreateDescriptorHeap(&dhd, IID_PPV_ARGS(&m_Srvheap));
+}
+
+void DirectXManager::CreateSRV()
+{
+	D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
+	srv.Format = GetTextureData().giPixelFormat;
+	srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srv.Texture2D.MipLevels = 1;
+	srv.Texture2D.MostDetailedMip = 0;
+	srv.Texture2D.PlaneSlice = 0;
+	srv.Texture2D.ResourceMinLODClamp = 0.f;
+
+	DX_CONTEXT.GetDevice()->CreateShaderResourceView(GetTexture(), &srv, GetSrvheap()->GetCPUDescriptorHandleForHeapStart());
+}
+
+void DirectXManager::UploadCPUResource()
+{
+	char* uploadBufferAddress;
+	D3D12_RANGE uploadRange;
+	uploadRange.Begin = 0;
+	uploadRange.End = 1024 + GetTextureSize();
+	GetUploadBuffer()->Map(0, &uploadRange, (void**)&uploadBufferAddress);
+	memcpy(&uploadBufferAddress[0], GetTextureData().data.data(), GetTextureSize());
+
+	size_t size = RenderingObject.GetTriangleIndex();
+	size_t curSize = 0;
+	for (size_t i = 0; i < size; ++i)
+	{
+		Triangle* triangle = RenderingObject.GetTriagleByIndex(i);
+		memcpy(&uploadBufferAddress[GetTextureSize() + curSize], triangle->m_Verticies, triangle->GetVerticiesSize());
+		curSize += triangle->GetVerticiesSize();
+	}
+
+	GetUploadBuffer()->Unmap(0, &uploadRange);
+}
+
+
+void DirectXManager::InitShader()
+{
+	Shader rootSignatureShader("RootSignature.cso");
+	Shader vertexShader("VertexShader.cso");
+	Shader pixelShader("PixelShader.cso");
+
+	DX_CONTEXT.GetDevice()->CreateRootSignature(0, rootSignatureShader.GetBuffer(), rootSignatureShader.GetSize(), IID_PPV_ARGS(&m_RootSignature));
+
+	InitPipelineSate(vertexShader, pixelShader);
+}
+
+void DirectXManager::InitPipelineSate(Shader& vertexShader, Shader& pixelShader)
+{
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC gfxPsod = GetPipelineState(m_RootSignature, GetVertexLayout(), GetVertexLayoutCount(), vertexShader, pixelShader);
+	DX_CONTEXT.GetDevice()->CreateGraphicsPipelineState(&gfxPsod, IID_PPV_ARGS(&m_PipelineStateObj));
 }

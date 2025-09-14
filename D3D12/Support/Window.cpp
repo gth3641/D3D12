@@ -118,14 +118,9 @@ bool DXWindow::Init()
 
 void DXWindow::Update()
 {
-	MSG msg;
+	MessageUpdate();
 
-	while (PeekMessageW(&msg, m_window, 0, 0, PM_REMOVE)) 
-	{
-		TranslateMessage(&msg);
-		DispatchMessageW(&msg);
-	}
-
+	LogicUpdate();
 }
 
 void DXWindow::Preset()
@@ -246,6 +241,50 @@ void DXWindow::EndFrame(ID3D12GraphicsCommandList7* cmdList)
 	barr.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
 
 	cmdList->ResourceBarrier(1, &barr);
+}
+
+D3D12_VIEWPORT DXWindow::CreateViewport()
+{
+	D3D12_VIEWPORT vp{};
+
+	vp.TopLeftX = vp.TopLeftY = 0.f;
+	vp.Width = (FLOAT)GetWidth();
+	vp.Height = (FLOAT)GetHeight();
+	vp.MinDepth = 1.f;
+	vp.MaxDepth = 0.f;
+
+	return vp;
+}
+
+RECT DXWindow::CreateScissorRect()
+{
+	RECT scRect;
+	scRect.left = scRect.top = 0;
+	scRect.right = GetWidth();
+	scRect.bottom = GetHeight();
+
+	return scRect;
+}
+
+void DXWindow::MessageUpdate()
+{
+	MSG msg;
+
+	while (PeekMessageW(&msg, m_window, 0, 0, PM_REMOVE))
+	{
+		TranslateMessage(&msg);
+		DispatchMessageW(&msg);
+	}
+}
+
+void DXWindow::LogicUpdate()
+{
+	// Handle resizing
+	if (DX_WINDOW.ShouldResize())
+	{
+		DX_CONTEXT.Flush(DXWindow::GetFrameCount());
+		DX_WINDOW.Resize();
+	}
 }
 
 bool DXWindow::GetBuffers()

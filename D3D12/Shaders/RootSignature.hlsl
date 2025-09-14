@@ -13,7 +13,7 @@ Root Signature Layout (GPU)
 #define ROOTSIG\
 "RootFlags(ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT),"\
 "RootConstants(num32BitConstants=4, b0),"\
-"RootConstants(num32BitConstants=4, b1),"\
+"RootConstants(num32BitConstants=2, b1),"\
 "DescriptorTable("\
     "SRV(t0, numDescriptors = unbounded)"\
 "),"\

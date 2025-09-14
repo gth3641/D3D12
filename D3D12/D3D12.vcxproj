@@ -138,6 +138,8 @@
     <ClCompile Include="D3D\DXContext.cpp" />
     <ClCompile Include="DebugD3D12\DebugLayer.cpp" />
     <ClCompile Include="Manager\DirectXManager.cpp" />
+    <ClCompile Include="Object\Object.cpp" />
+    <ClCompile Include="Object\RenderingObject.cpp" />
     <ClCompile Include="Support\ImageLoader.cpp" />
     <ClCompile Include="Support\Shader.cpp" />
     <ClCompile Include="Support\Window.cpp" />
@@ -146,6 +148,8 @@
     <ClInclude Include="D3D\DXContext.h" />
     <ClInclude Include="DebugD3D12\DebugLayer.h" />
     <ClInclude Include="Manager\DirectXManager.h" />
+    <ClInclude Include="Object\Object.h" />
+    <ClInclude Include="Object\RenderingObject.h" />
     <ClInclude Include="Support\ComPointer.h" />
     <ClInclude Include="Support\ImageLoader.h" />
     <ClInclude Include="Support\Shader.h" />

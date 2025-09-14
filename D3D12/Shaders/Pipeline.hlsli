@@ -5,3 +5,8 @@ struct Correction
     float sinAngle;
     float cosAngle;
 };
+
+struct ScreenCB
+{
+    float2 ViewSize; // (Width, Height)
+};

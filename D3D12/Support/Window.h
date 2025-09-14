@@ -19,6 +19,9 @@ public:
 	void BegineFrame(ID3D12GraphicsCommandList7* cmdList);
 	void EndFrame(ID3D12GraphicsCommandList7* cmdList);
 
+	D3D12_VIEWPORT CreateViewport();
+	RECT CreateScissorRect();
+
 	inline bool ShouldClose() const { return m_shouldClose; }
 	inline bool ShouldResize() const { return m_shouldResize; }
 	inline bool IsFullscreen() const { return m_isFullscreen; }
@@ -33,6 +36,9 @@ public:
 	}
 
 private:
+	void MessageUpdate();
+	void LogicUpdate();
+
 	bool GetBuffers();
 	void ReleaseBuffers();
 
