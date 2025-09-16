@@ -61,16 +61,8 @@ public: // Functions
     D3D12_INPUT_ELEMENT_DESC* GetVertexLayout() { return m_VertexLayout; }
     int GetVertexLayoutCount() { return _countof(m_VertexLayout); }
 
-    RenderingObject& GetRenderingObject() { return RenderingObject; }
-
-    ImageData& GetTextureData() { return m_TextureData; }
-    uint32_t GetTextureStride() { return m_TextureStride; }
-    uint32_t GetTextureSize() { return m_TextureSize; }
-
-    ComPointer<ID3D12Resource2>& GetUploadBuffer() { return m_UploadBuffer; }
-    ComPointer<ID3D12Resource2>& GetVertexBuffer() { return m_VertexBuffer; }
-    ComPointer<ID3D12Resource2>& GetTexture() { return m_Texture; }
-    ComPointer<ID3D12DescriptorHeap>& GetSrvheap() { return m_Srvheap; }
+    RenderingObject& GetRenderingObject1() { return RenderingObject1; }
+    RenderingObject& GetRenderingObject2() { return RenderingObject2; }
 
     ComPointer<ID3D12RootSignature>& GetRootSignature() { return m_RootSignature; }
     ComPointer<ID3D12PipelineState>& GetPipelineStateObj() { return m_PipelineStateObj; }
@@ -79,6 +71,8 @@ public: // Functions
 private: // Functions
     void SetVerticies();
     void SetVertexLayout();
+
+    void InitUploadRenderingObject();
 
     void SetTextureData();
     void UploadTextureBuffer();
@@ -91,17 +85,8 @@ private: // Functions
 private: // Variables
 
     D3D12_INPUT_ELEMENT_DESC m_VertexLayout[2];
-    RenderingObject RenderingObject;
-
-    ImageData m_TextureData;
-    uint32_t m_TextureStride = 0;
-    uint32_t m_TextureSize = 0;
-
-    ComPointer<ID3D12Resource2> m_UploadBuffer;
-    ComPointer<ID3D12Resource2> m_VertexBuffer;
-    ComPointer<ID3D12Resource2> m_Texture;
-
-    ComPointer<ID3D12DescriptorHeap> m_Srvheap;
+    RenderingObject RenderingObject1;
+    RenderingObject RenderingObject2;
 
     ComPointer<ID3D12RootSignature> m_RootSignature;
     ComPointer<ID3D12PipelineState> m_PipelineStateObj;

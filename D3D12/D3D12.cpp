@@ -13,24 +13,6 @@
 #include "D3D/DXContext.h"
 #include "Util/Util.h"
 
-void pukeColor(float* color)
-{
-	static int pukeState = 0;
-	color[pukeState] += 0.01f;
-	if (color[pukeState] > 1.f)
-	{
-		pukeState++;
-		if (pukeState == 3)
-		{
-			color[0] = 0.f;
-			color[1] = 0.f;
-			color[2] = 0.f;
-
-			pukeState = 0;
-		}
-	}
-}
-
 int main()
 {
 	DX_DEBUG_LAYER.Init();
@@ -48,7 +30,8 @@ int main()
 		DX_CONTEXT.ExecuteCommandList();
 
 		// === Vertex buffer view ===
-		D3D12_VERTEX_BUFFER_VIEW vbv = DirectXManager::GetVertexBufferView(DX_MANAGER.GetVertexBuffer(), DX_MANAGER.GetRenderingObject().GetVertexCount(), sizeof(Vertex));
+		D3D12_VERTEX_BUFFER_VIEW vbv1 = DirectXManager::GetVertexBufferView(DX_MANAGER.GetRenderingObject1().GetVertexBuffer(), DX_MANAGER.GetRenderingObject1().GetVertexCount(), sizeof(Vertex));
+		D3D12_VERTEX_BUFFER_VIEW vbv2 = DirectXManager::GetVertexBufferView(DX_MANAGER.GetRenderingObject2().GetVertexBuffer(), DX_MANAGER.GetRenderingObject2().GetVertexCount(), sizeof(Vertex));
 
 		DX_WINDOW.SetFullScreen(false);
 		while (DX_WINDOW.ShouldClose() == false)
@@ -65,9 +48,10 @@ int main()
 			// === PSO ===
 			cmdList->SetPipelineState(DX_MANAGER.GetPipelineStateObj());
 			cmdList->SetGraphicsRootSignature(DX_MANAGER.GetRootSignature());
-			cmdList->SetDescriptorHeaps(1, &DX_MANAGER.GetSrvheap());
+			ID3D12DescriptorHeap* heaps[] = { DX_MANAGER.GetRenderingObject1().GetSrvheap() , DX_MANAGER.GetRenderingObject2().GetSrvheap() };
+			//cmdList->SetDescriptorHeaps(1, &DX_MANAGER.GetRenderingObject1().GetSrvheap());
 			// === IA ===
-			cmdList->IASetVertexBuffers(0, 1, &vbv);
+			//cmdList->IASetVertexBuffers(0, 1, &vbv1);
 			cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 			// === RS ===
 			D3D12_VIEWPORT vp = DX_WINDOW.CreateViewport();
@@ -77,31 +61,11 @@ int main()
 
 			// === OM ===
 			static float bf_ff = 0.f;
-			//bf_ff += 0.01f;
-			if (bf_ff > 1.f) bf_ff = 0.f;
-
 			float bf[] = { bf_ff , bf_ff , bf_ff , bf_ff };
 			cmdList->OMSetBlendFactor(bf);
 
 			// === Update ===
 			static  float color[] = { 0.f, 0.f, 0.f };
-			//pukeColor(color);
-
-			static float angle = 0.0f;
-			//angle += 0.001f;
-			/*struct Correction 
-			{
-				float aspectRatio;
-				float zoom;
-				float sinAngle;
-				float cosAngle;
-			};
-			Correction correction{
-				.aspectRatio = ((float)DX_WINDOW.GetHeight() / ((float)DX_WINDOW.GetWidth())),
-				.zoom = 0.8f,
-				.sinAngle = sinf(angle),
-				.cosAngle = cosf(angle)
-			};*/
 
 			struct ScreenCB
 			{
@@ -112,11 +76,25 @@ int main()
 			// === ROOT ===
 			cmdList->SetGraphicsRoot32BitConstants(0, 3, color, 0);
 			cmdList->SetGraphicsRoot32BitConstants(1, 2, &scb, 0);
-			cmdList->SetGraphicsRootDescriptorTable(2, DX_MANAGER.GetSrvheap()->GetGPUDescriptorHandleForHeapStart());
+			//cmdList->SetGraphicsRootDescriptorTable(2, DX_MANAGER.GetRenderingObject1().GetSrvheap()->GetGPUDescriptorHandleForHeapStart());
 
 			// === Draw ===
-			cmdList->DrawInstanced(DX_MANAGER.GetRenderingObject().GetVertexCount(), 1, 0, 0);
-			
+			//cmdList->DrawInstanced(DX_MANAGER.GetRenderingObject1().GetVertexCount(), 1, 0, 0);
+
+			ID3D12DescriptorHeap* h1 = DX_MANAGER.GetRenderingObject1().GetSrvheap();
+			cmdList->SetDescriptorHeaps(1, &h1);
+			cmdList->SetGraphicsRootDescriptorTable(2, h1->GetGPUDescriptorHandleForHeapStart());
+			cmdList->IASetVertexBuffers(0, 1, &vbv1);
+			cmdList->DrawInstanced(DX_MANAGER.GetRenderingObject1().GetVertexCount(), 1, 0, 0);
+
+			ID3D12DescriptorHeap* h2 = DX_MANAGER.GetRenderingObject2().GetSrvheap();
+			cmdList->SetDescriptorHeaps(1, &h2);
+			cmdList->SetGraphicsRootDescriptorTable(2, h2->GetGPUDescriptorHandleForHeapStart());
+			cmdList->IASetVertexBuffers(0, 1, &vbv2);
+			cmdList->DrawInstanced(DX_MANAGER.GetRenderingObject2().GetVertexCount(), 1, 0, 0);
+
+
+
 			DX_WINDOW.EndFrame(cmdList);
 
 			// a lot of setup

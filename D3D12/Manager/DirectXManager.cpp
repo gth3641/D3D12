@@ -206,12 +206,7 @@ bool DirectXManager::Init()
 	SetVerticies();
 	SetVertexLayout();
 
-	SetTextureData();
-
-	UploadTextureBuffer();
-	CreateDescriptorHipForTexture();
-	CreateSRV();
-	UploadCPUResource();
+	InitUploadRenderingObject();
 
 	InitShader();
 	return true;
@@ -220,10 +215,6 @@ bool DirectXManager::Init()
 
 void DirectXManager::Shutdown()
 {
-	m_VertexBuffer.Release();
-	m_UploadBuffer.Release();
-	m_Texture.Release();
-	m_Srvheap.Release();
 	m_RootSignature.Release();
 	m_PipelineStateObj.Release();
 }
@@ -235,13 +226,8 @@ void DirectXManager::UploadGPUResource(ID3D12GraphicsCommandList7* cmdList)
 		return;
 	}
 
-	cmdList->CopyBufferRegion(GetVertexBuffer(), 0, GetUploadBuffer(), GetTextureSize(), 1024);
-
-	D3D12_BOX textureSizeAsBox = GetTextureSizeAsBox(GetTextureData());
-	D3D12_TEXTURE_COPY_LOCATION txtcSrc = GetTextureSource(GetUploadBuffer(), GetTextureData(), GetTextureStride());
-	D3D12_TEXTURE_COPY_LOCATION txtcDst = GetTextureDestination(GetTexture());
-
-	cmdList->CopyTextureRegion(&txtcDst, 0, 0, 0, &txtcSrc, &textureSizeAsBox);
+	RenderingObject1.UploadGPUResource(cmdList);
+	RenderingObject2.UploadGPUResource(cmdList);
 }
 
 void DirectXManager::SetVerticies()
@@ -260,9 +246,25 @@ void DirectXManager::SetVerticies()
 		{ 500.f, 500.f, 1.f, 1.f }
 	};
 
-	RenderingObject.AddTriangle(vertex1, 3);
-	RenderingObject.AddTriangle(vertex2, 3);
+	RenderingObject1.AddTriangle(vertex1, 3);
+	RenderingObject1.AddTriangle(vertex2, 3);
 
+	Vertex vertex3[] =
+	{
+		{ 500.f,  0.f, 1.f, 1.f },
+		{ 500.f, 500.f, 1.f, 0.f },
+		{ 1000.f, 500.f, 0.f, 0.f }
+	};
+
+	Vertex vertex4[] =
+	{
+		{ 500.f, 0.f, 1.f, 1.f },
+		{ 1000.f, 0.f, 0.f, 1.f },
+		{ 1000.f, 500.f, 0.f, 0.f }
+	};
+
+	RenderingObject2.AddTriangle(vertex3, 3);
+	RenderingObject2.AddTriangle(vertex4, 3);
 }
 
 void DirectXManager::SetVertexLayout()
@@ -271,73 +273,18 @@ void DirectXManager::SetVertexLayout()
 	m_VertexLayout[1] = { "Texcoord", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(float) * 2, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 };
 }
 
-void DirectXManager::SetTextureData()
+void DirectXManager::InitUploadRenderingObject()
 {
-	ImageLoader::LoadImageFromDisk("./Resources/TEX_Noise.png", m_TextureData);
-	m_TextureStride = m_TextureData.width * ((m_TextureData.bpp + 7) / 8);
-	m_TextureSize  = (m_TextureData.height * m_TextureStride);
-}
-
-void DirectXManager::UploadTextureBuffer()
-{
-	D3D12_HEAP_PROPERTIES hpUpload = GetHeapUploadProperties();
-	D3D12_HEAP_PROPERTIES hpDefault = GetDefaultUploadProperties();
-
-	D3D12_RESOURCE_DESC rdv = GetVertexResourceDesc();
-	D3D12_RESOURCE_DESC rdu = GetUploadResourceDesc(GetTextureSize()); //< TODO: 이거 어느 상황에 필요한건지 체크
-	D3D12_RESOURCE_DESC rdt = GetTextureResourceDesc(GetTextureData());
-
-	DX_CONTEXT.GetDevice()->CreateCommittedResource(&hpUpload, D3D12_HEAP_FLAG_NONE, &rdu, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&m_UploadBuffer));
-	DX_CONTEXT.GetDevice()->CreateCommittedResource(&hpDefault, D3D12_HEAP_FLAG_NONE, &rdv, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_VertexBuffer));
-	DX_CONTEXT.GetDevice()->CreateCommittedResource(&hpDefault, D3D12_HEAP_FLAG_NONE, &rdt, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_Texture));
-}
-
-void DirectXManager::CreateDescriptorHipForTexture()
-{
-	D3D12_DESCRIPTOR_HEAP_DESC dhd{};
-	dhd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	dhd.NumDescriptors = 8;
-	dhd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	dhd.NodeMask = 0;
-
-	DX_CONTEXT.GetDevice()->CreateDescriptorHeap(&dhd, IID_PPV_ARGS(&m_Srvheap));
-}
-
-void DirectXManager::CreateSRV()
-{
-	D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
-	srv.Format = GetTextureData().giPixelFormat;
-	srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srv.Texture2D.MipLevels = 1;
-	srv.Texture2D.MostDetailedMip = 0;
-	srv.Texture2D.PlaneSlice = 0;
-	srv.Texture2D.ResourceMinLODClamp = 0.f;
-
-	DX_CONTEXT.GetDevice()->CreateShaderResourceView(GetTexture(), &srv, GetSrvheap()->GetCPUDescriptorHandleForHeapStart());
-}
-
-void DirectXManager::UploadCPUResource()
-{
-	char* uploadBufferAddress;
-	D3D12_RANGE uploadRange;
-	uploadRange.Begin = 0;
-	uploadRange.End = 1024 + GetTextureSize();
-	GetUploadBuffer()->Map(0, &uploadRange, (void**)&uploadBufferAddress);
-	memcpy(&uploadBufferAddress[0], GetTextureData().data.data(), GetTextureSize());
-
-	size_t size = RenderingObject.GetTriangleIndex();
-	size_t curSize = 0;
-	for (size_t i = 0; i < size; ++i)
+	if (RenderingObject1.Init("./Resources/TEX_Noise.png") == false)
 	{
-		Triangle* triangle = RenderingObject.GetTriagleByIndex(i);
-		memcpy(&uploadBufferAddress[GetTextureSize() + curSize], triangle->m_Verticies, triangle->GetVerticiesSize());
-		curSize += triangle->GetVerticiesSize();
+		return;
 	}
 
-	GetUploadBuffer()->Unmap(0, &uploadRange);
+	if (RenderingObject2.Init("./Resources/TEX_Noise.png") == false)
+	{
+		return;
+	}
 }
-
 
 void DirectXManager::InitShader()
 {
