@@ -7,11 +7,15 @@
 #include "Support/Window.h"
 
 #include "Manager/DirectXManager.h"
+#include "Manager/ImageManager.h"
+#include "Manager/OnnxManager.h"
 
 #include "DebugD3D12/DebugLayer.h"
 
 #include "D3D/DXContext.h"
 #include "Util/Util.h"
+
+
 
 int main()
 {
@@ -19,21 +23,38 @@ int main()
 
 	if (DX_CONTEXT.Init() == true && DX_WINDOW.Init() == true)
 	{
+		if (DX_IMAGE.Init() == false)
+		{
+			return -1;
+		}
+
 		if (DX_MANAGER.Init() == false)
 		{
 			return -1;
 		}
 
+		//DX_ONNX.RunTest();
+		//bool basd = DX_ONNX.RunCpuSmokeTest();
+
 		// Copy CPU Resource --> GPU Resource
 		ID3D12GraphicsCommandList7* cmdList = DX_CONTEXT.InitCommandList();
+
+		if (DX_ONNX.Init(L"./Resources/Onnx/udnie-9.onnx",DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
+		{
+			return -1;
+		}
+
 		DX_MANAGER.UploadGPUResource(cmdList);
 		DX_CONTEXT.ExecuteCommandList();
+		//bool asdf = DX_ONNX.RunGpuSmokeTest(DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue());
 
 		// === Vertex buffer view ===
 		D3D12_VERTEX_BUFFER_VIEW vbv1 = DirectXManager::GetVertexBufferView(DX_MANAGER.GetRenderingObject1().GetVertexBuffer(), DX_MANAGER.GetRenderingObject1().GetVertexCount(), sizeof(Vertex));
 		D3D12_VERTEX_BUFFER_VIEW vbv2 = DirectXManager::GetVertexBufferView(DX_MANAGER.GetRenderingObject2().GetVertexBuffer(), DX_MANAGER.GetRenderingObject2().GetVertexCount(), sizeof(Vertex));
 
 		DX_WINDOW.SetFullScreen(false);
+		DX_MANAGER.CreateOnnxResources(DX_WINDOW.GetWidth(), DX_WINDOW.GetHeight());
+
 		while (DX_WINDOW.ShouldClose() == false)
 		{
 			//Process pending window message
@@ -48,10 +69,9 @@ int main()
 			// === PSO ===
 			cmdList->SetPipelineState(DX_MANAGER.GetPipelineStateObj());
 			cmdList->SetGraphicsRootSignature(DX_MANAGER.GetRootSignature());
-			ID3D12DescriptorHeap* heaps[] = { DX_MANAGER.GetRenderingObject1().GetSrvheap() , DX_MANAGER.GetRenderingObject2().GetSrvheap() };
-			//cmdList->SetDescriptorHeaps(1, &DX_MANAGER.GetRenderingObject1().GetSrvheap());
 			// === IA ===
-			//cmdList->IASetVertexBuffers(0, 1, &vbv1);
+
+
 			cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 			// === RS ===
 			D3D12_VIEWPORT vp = DX_WINDOW.CreateViewport();
@@ -76,24 +96,20 @@ int main()
 			// === ROOT ===
 			cmdList->SetGraphicsRoot32BitConstants(0, 3, color, 0);
 			cmdList->SetGraphicsRoot32BitConstants(1, 2, &scb, 0);
-			//cmdList->SetGraphicsRootDescriptorTable(2, DX_MANAGER.GetRenderingObject1().GetSrvheap()->GetGPUDescriptorHandleForHeapStart());
 
 			// === Draw ===
-			//cmdList->DrawInstanced(DX_MANAGER.GetRenderingObject1().GetVertexCount(), 1, 0, 0);
+			ID3D12DescriptorHeap* srvHeap = DX_IMAGE.GetSrvheap();
+			cmdList->SetDescriptorHeaps(1, &srvHeap);
 
-			ID3D12DescriptorHeap* h1 = DX_MANAGER.GetRenderingObject1().GetSrvheap();
-			cmdList->SetDescriptorHeaps(1, &h1);
-			cmdList->SetGraphicsRootDescriptorTable(2, h1->GetGPUDescriptorHandleForHeapStart());
+			cmdList->SetGraphicsRootDescriptorTable(2, DX_IMAGE.GetGPUDescriptorHandle(DX_MANAGER.GetRenderingObject1().GetTestIndex()));
 			cmdList->IASetVertexBuffers(0, 1, &vbv1);
 			cmdList->DrawInstanced(DX_MANAGER.GetRenderingObject1().GetVertexCount(), 1, 0, 0);
 
-			ID3D12DescriptorHeap* h2 = DX_MANAGER.GetRenderingObject2().GetSrvheap();
-			cmdList->SetDescriptorHeaps(1, &h2);
-			cmdList->SetGraphicsRootDescriptorTable(2, h2->GetGPUDescriptorHandleForHeapStart());
+			cmdList->SetGraphicsRootDescriptorTable(2, DX_IMAGE.GetGPUDescriptorHandle(DX_MANAGER.GetRenderingObject2().GetTestIndex()));
 			cmdList->IASetVertexBuffers(0, 1, &vbv2);
 			cmdList->DrawInstanced(DX_MANAGER.GetRenderingObject2().GetVertexCount(), 1, 0, 0);
 
-
+			DX_MANAGER.RecordOnnxPass(cmdList); // ← 전처리→Run→후처리→합성
 
 			DX_WINDOW.EndFrame(cmdList);
 
@@ -112,6 +128,8 @@ int main()
 		// Close
 
 		DX_MANAGER.Shutdown();
+		DX_IMAGE.Shutdown();
+		DX_ONNX.Shutdown();
 		DX_WINDOW.Shutdown();
 		DX_CONTEXT.Shutdown();
 	}

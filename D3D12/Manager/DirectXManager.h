@@ -7,9 +7,30 @@
 
 #include "Object/RenderingObject.h"
 
+
+
 #define DX_MANAGER DirectXManager::Get()
 
 class Shader;
+
+struct OnnxPassResources {
+    // 1) 오프스크린 씬 텍스처 (RTV+SRV)
+    ComPointer<ID3D12Resource> SceneTex;
+    D3D12_CPU_DESCRIPTOR_HANDLE SceneRTV{};
+    D3D12_CPU_DESCRIPTOR_HANDLE OnnxResultRTV{}; // 옵션(후처리용)
+    D3D12_GPU_DESCRIPTOR_HANDLE SceneSRV{};      // 전처리 입력
+
+    // 2) 결과 뿌릴 텍스처 (UAV+SRV)
+    ComPointer<ID3D12Resource> OnnxTex; // 최종 화면용 RGBA8
+    D3D12_GPU_DESCRIPTOR_HANDLE OnnxTexUAV{};
+    D3D12_GPU_DESCRIPTOR_HANDLE OnnxTexSRV{};
+
+    // 3) 전처리/후처리용 PSO/RootSig
+    ComPointer<ID3D12RootSignature> PreRS;// , PostRS;
+    ComPointer<ID3D12PipelineState> PrePSO, PostPSO;
+
+    UINT Width = 0, Height = 0;
+};
 
 class DirectXManager
 {
@@ -66,7 +87,18 @@ public: // Functions
 
     ComPointer<ID3D12RootSignature>& GetRootSignature() { return m_RootSignature; }
     ComPointer<ID3D12PipelineState>& GetPipelineStateObj() { return m_PipelineStateObj; }
+    //ComPointer<ID3D12DescriptorHeap>& GetSrvheap() { return m_Srvheap; }
+
+    //D3D12_CPU_DESCRIPTOR_HANDLE GetCPUDescriptorHandle(const UINT64 index);
+    //D3D12_GPU_DESCRIPTOR_HANDLE GetGPUDescriptorHandle(const UINT64 index);
     //==================================//
+
+    void CreateOnnxResources(UINT W, UINT H);
+    void ResizeOnnxResources(UINT W, UINT H);
+    void RecordOnnxPass(ID3D12GraphicsCommandList* cmd);
+
+    bool CreateOnnxComputePipeline();
+
 
 private: // Functions
     void SetVerticies();
@@ -74,13 +106,13 @@ private: // Functions
 
     void InitUploadRenderingObject();
 
-    void SetTextureData();
     void UploadTextureBuffer();
     void CreateDescriptorHipForTexture();
     void CreateSRV();
     void UploadCPUResource();
 
     void InitPipelineSate(Shader& vertexShader, Shader& pixelShader);
+
 
 private: // Variables
 
@@ -90,5 +122,10 @@ private: // Variables
 
     ComPointer<ID3D12RootSignature> m_RootSignature;
     ComPointer<ID3D12PipelineState> m_PipelineStateObj;
+
+    //ComPointer<ID3D12DescriptorHeap> m_Srvheap;
+
+    OnnxPassResources onnx_;
+
 };
 

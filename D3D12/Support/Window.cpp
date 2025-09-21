@@ -1,4 +1,6 @@
 #include "Window.h"
+#include "Manager/OnnxManager.h"
+#include "Manager/DirectXManager.h"
 #include <comdef.h>
 
 #pragma comment(lib, "User32.lib")
@@ -284,6 +286,8 @@ void DXWindow::LogicUpdate()
 	{
 		DX_CONTEXT.Flush(DXWindow::GetFrameCount());
 		DX_WINDOW.Resize();
+
+		DX_MANAGER.ResizeOnnxResources(m_width, m_height);
 	}
 }
 
