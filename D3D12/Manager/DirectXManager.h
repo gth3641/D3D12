@@ -66,6 +66,10 @@ public: // Functions
 
     ComPointer<ID3D12RootSignature>& GetRootSignature() { return m_RootSignature; }
     ComPointer<ID3D12PipelineState>& GetPipelineStateObj() { return m_PipelineStateObj; }
+    //ComPointer<ID3D12DescriptorHeap>& GetSrvheap() { return m_Srvheap; }
+
+    //D3D12_CPU_DESCRIPTOR_HANDLE GetCPUDescriptorHandle(const UINT64 index);
+    //D3D12_GPU_DESCRIPTOR_HANDLE GetGPUDescriptorHandle(const UINT64 index);
     //==================================//
 
 private: // Functions
@@ -74,7 +78,6 @@ private: // Functions
 
     void InitUploadRenderingObject();
 
-    void SetTextureData();
     void UploadTextureBuffer();
     void CreateDescriptorHipForTexture();
     void CreateSRV();
@@ -90,5 +93,7 @@ private: // Variables
 
     ComPointer<ID3D12RootSignature> m_RootSignature;
     ComPointer<ID3D12PipelineState> m_PipelineStateObj;
+
+    //ComPointer<ID3D12DescriptorHeap> m_Srvheap;
 };
 

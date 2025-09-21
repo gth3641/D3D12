@@ -9,7 +9,7 @@ Image::~Image()
 
 void Image::ImageLoad(const std::filesystem::path& imagePath)
 {
-	ImageLoader::LoadImageFromDisk("./Resources/TEX_Noise.png", m_TextureData);
+	ImageLoader::LoadImageFromDisk(imagePath, m_TextureData);
 	m_TextureStride = m_TextureData.width * ((m_TextureData.bpp + 7) / 8);
 	m_TextureSize = (m_TextureData.height * m_TextureStride);
 }

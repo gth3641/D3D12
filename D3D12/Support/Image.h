@@ -4,6 +4,8 @@
 #include "ComPointer.h"
 #include "ImageLoader.h"
 
+#include <string>
+
 class Image 
 {
 public:
@@ -24,5 +26,6 @@ private:
     uint32_t m_TextureStride = 0;
     uint32_t m_TextureSize = 0;
 
+    std::string m_ImagePath;
     ComPointer<ID3D12Resource2> m_Texture;
 };
