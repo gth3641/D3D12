@@ -206,6 +206,8 @@ bool DirectXManager::Init()
 	SetVerticies();
 	SetVertexLayout();
 
+	CreateDescriptorHipForTexture();
+
 	InitUploadRenderingObject();
 
 	InitShader();
@@ -217,6 +219,7 @@ void DirectXManager::Shutdown()
 {
 	m_RootSignature.Release();
 	m_PipelineStateObj.Release();
+	//m_Srvheap.Release();
 }
 
 void DirectXManager::UploadGPUResource(ID3D12GraphicsCommandList7* cmdList)
@@ -229,6 +232,32 @@ void DirectXManager::UploadGPUResource(ID3D12GraphicsCommandList7* cmdList)
 	RenderingObject1.UploadGPUResource(cmdList);
 	RenderingObject2.UploadGPUResource(cmdList);
 }
+
+//D3D12_CPU_DESCRIPTOR_HANDLE DirectXManager::GetCPUDescriptorHandle(const UINT64 index)
+//{
+//	if (m_Srvheap != nullptr)
+//	{
+//		D3D12_CPU_DESCRIPTOR_HANDLE srvHeapHandle = m_Srvheap->GetCPUDescriptorHandleForHeapStart();
+//		srvHeapHandle.ptr += index * DX_CONTEXT.GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+//
+//		return srvHeapHandle;
+//	}
+//
+//	return D3D12_CPU_DESCRIPTOR_HANDLE();
+//}
+//
+//D3D12_GPU_DESCRIPTOR_HANDLE DirectXManager::GetGPUDescriptorHandle(const UINT64 index)
+//{
+//	if (m_Srvheap != nullptr)
+//	{
+//		D3D12_GPU_DESCRIPTOR_HANDLE srvHeapHandle = m_Srvheap->GetGPUDescriptorHandleForHeapStart();
+//		srvHeapHandle.ptr += index * DX_CONTEXT.GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+//
+//		return srvHeapHandle;
+//	}
+//
+//	return D3D12_GPU_DESCRIPTOR_HANDLE();
+//}
 
 void DirectXManager::SetVerticies()
 {
@@ -273,14 +302,25 @@ void DirectXManager::SetVertexLayout()
 	m_VertexLayout[1] = { "Texcoord", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(float) * 2, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 };
 }
 
+void DirectXManager::CreateDescriptorHipForTexture()
+{
+	/*D3D12_DESCRIPTOR_HEAP_DESC dhd{};
+	dhd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	dhd.NumDescriptors = 4096;
+	dhd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	dhd.NodeMask = 0;
+
+	DX_CONTEXT.GetDevice()->CreateDescriptorHeap(&dhd, IID_PPV_ARGS(&m_Srvheap));*/
+}
+
 void DirectXManager::InitUploadRenderingObject()
 {
-	if (RenderingObject1.Init("./Resources/TEX_Noise.png") == false)
+	if (RenderingObject1.Init("./Resources/TEX_Noise.png", 0) == false)
 	{
 		return;
 	}
 
-	if (RenderingObject2.Init("./Resources/TEX_Noise.png") == false)
+	if (RenderingObject2.Init("./Resources/Image.png", 1) == false)
 	{
 		return;
 	}

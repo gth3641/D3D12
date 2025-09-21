@@ -12,18 +12,18 @@ public:
 	RenderingObject();
 	~RenderingObject();
 public: // Functions
-	bool Init(const std::filesystem::path& imagePath);
+	bool Init(const std::filesystem::path& imagePath, UINT64 index);
 	void UploadGPUResource(ID3D12GraphicsCommandList7* cmdList);
 
 	const std::vector<Triangle>& GetTriangleVector() const { return m_Triangle; }
 	Triangle* GetTriagleByIndex(size_t index);
 	size_t GetTriangleIndex() const { return m_Triangle.size(); }
+	UINT64 GetTestIndex() const { return m_TestIndex; }
 
 	std::shared_ptr<Image> GetImage() { return m_Image; }
 
 	ComPointer<ID3D12Resource2>& GetUploadBuffer() { return m_UploadBuffer; }
 	ComPointer<ID3D12Resource2>& GetVertexBuffer() { return m_VertexBuffer; }
-	ComPointer<ID3D12DescriptorHeap>& GetSrvheap() { return m_Srvheap; }
 
 	int GetVertexCount();
 	void AddTriangle(const Vertex* vertex, size_t size);
@@ -31,7 +31,7 @@ public: // Functions
 private: // Functions
 	void AddTexture(const std::filesystem::path& imagePath);
 	void UploadTextureBuffer();
-	void CreateDescriptorHipForTexture();
+	//void CreateDescriptorHipForTexture();
 	void CreateSRV();
 	void UploadCPUResource();
 
@@ -42,7 +42,8 @@ private: // Variables
 	
 	ComPointer<ID3D12Resource2> m_UploadBuffer;
 	ComPointer<ID3D12Resource2> m_VertexBuffer;
-	ComPointer<ID3D12DescriptorHeap> m_Srvheap;
+
+	INT64 m_TestIndex = 0;
 
 };
 
