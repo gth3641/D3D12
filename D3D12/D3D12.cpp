@@ -29,40 +29,36 @@ int main()
         // 루프
         while (!DX_WINDOW.ShouldClose())
         {
-            // 0) 윈도우 메시지
             DX_WINDOW.Update();
-
-            // 1) 프레임 사전 처리
             DX_MANAGER.BeginFrame();
 
-            // 2) 오프스크린 렌더 (SceneColor에 그림)
+            // 1) 오프스크린 렌더 + Preprocess (Scene → InputNCHW)
             {
                 ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
-                DX_MANAGER.RenderOffscreen(cmd);   // 끝에서 SceneColor -> NON_PIXEL_SHADER_RESOURCE
-                DX_CONTEXT.ExecuteCommandList();
+                DX_MANAGER.RenderOffscreen(cmd);       // mSceneColor: RT→NON_PIXEL_SHADER_RESOURCE 로 전환 포함
+                DX_MANAGER.RecordPreprocess(cmd);      // t0=Scene SRV, u0=Input UAV(ONNX)
+                DX_CONTEXT.ExecuteCommandList();       // ★ 반드시 먼저 제출
             }
 
-            // 3) 컴퓨트 전/후처리만 돌린다 (ONNX 없이도 우선 그림이 보이게)
-            {
-                ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
-                DX_MANAGER.RecordPreprocess(cmd);  // SceneColor -> InputNCHW
-                DX_MANAGER.RecordPostprocess(cmd); // InputNCHW -> OnnxTex(RGBA8), 마지막에 OnnxTex -> PSR
-                DX_CONTEXT.ExecuteCommandList();
-            }
+            // 2) ONNX 실행 (DML) — 같은 큐에 enqueue
+            DX_ONNX.Run();
 
-            // 4) 백버퍼로 블릿 + 표시
+            // ★ 간단히 동기화(확실히 하려면 Flush/펜스). DX_CONTEXT.Flush() 같은게 있으면 그거 사용.
+            DX_CONTEXT.SignalAndWait(); // 없으면 큐에 Fence Signal/Wait 구현해서 한 번 대기
+
+            // 3) Postprocess (OutputCHW → OnnxTex) + Blit + Present
             {
                 ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
                 DX_WINDOW.BegineFrame(cmd);
-
-                // OnnxTex SRV를 샘플해서 그리도록 이미 구현돼 있음
-                DX_MANAGER.BlitToBackbuffer(cmd);
-
+                DX_MANAGER.RecordPostprocess(cmd);     // t0=Output SRV(ONNX), u0=OnnxTex UAV
+                DX_MANAGER.BlitToBackbuffer(cmd);      // OnnxTex SRV → 백버퍼
                 DX_WINDOW.EndFrame(cmd);
                 DX_CONTEXT.ExecuteCommandList();
                 DX_WINDOW.Present();
             }
         }
+
+
         // 종료
         DX_MANAGER.Shutdown();
         DX_IMAGE.Shutdown();
