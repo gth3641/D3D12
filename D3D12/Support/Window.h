@@ -4,6 +4,7 @@
 #include "Support/ComPointer.h"
 #include "D3D/DXContext.h"
 
+
 #define DX_WINDOW DXWindow::Get()
 
 class DXWindow
@@ -11,7 +12,7 @@ class DXWindow
 public:
 	bool Init();
 	void Update();
-	void Preset();
+	void Present();
 	void Shutdown();
 	void Resize();
 	void SetFullScreen(bool enabled);
@@ -34,6 +35,14 @@ public:
 	{
 		return FrameCount;
 	}
+
+	ComPointer<ID3D12Resource2> GetBackbuffer() const;
+	void GetBackbufferSize(UINT& outW, UINT& outH) const;
+
+	size_t GetBackBufferIndex() const { return m_currentBufferIndex; }
+	D3D12_CPU_DESCRIPTOR_HANDLE GetRtvHandle(size_t index);
+
+	ComPointer<ID3D12DescriptorHeap> GetRtvDescHeap() { return m_rtvDescHeap; }
 
 private:
 	void MessageUpdate();

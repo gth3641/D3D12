@@ -92,7 +92,7 @@ void RenderingObject::UploadTextureBuffer()
 	D3D12_HEAP_PROPERTIES hpUpload = DirectXManager::GetHeapUploadProperties();
 	D3D12_HEAP_PROPERTIES hpDefault = DirectXManager::GetDefaultUploadProperties();
 
-	D3D12_RESOURCE_DESC rdu = DirectXManager::GetUploadResourceDesc(m_Image->GetTextureSize()); //< TODO: 이거 어느 상황에 필요한건지 체크
+	D3D12_RESOURCE_DESC rdu = DirectXManager::GetUploadResourceDesc(m_Image->GetTextureSize());
 	D3D12_RESOURCE_DESC rdv = DirectXManager::GetVertexResourceDesc();
 
 	DX_CONTEXT.GetDevice()->CreateCommittedResource(&hpUpload, D3D12_HEAP_FLAG_NONE, &rdu, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&m_UploadBuffer));

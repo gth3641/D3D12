@@ -15,6 +15,7 @@ public:
 
 	void SignalAndWait();
 	ID3D12GraphicsCommandList7* InitCommandList();
+	ID3D12GraphicsCommandList7* GetCommandList() { return m_cmdList; }
 	void ExecuteCommandList();
 
 	inline void Flush(size_t count)
