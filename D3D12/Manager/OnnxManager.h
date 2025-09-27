@@ -32,12 +32,6 @@ public:
 public: // Static & Override
   
 public: // Functions
-    //bool Init();
-    //void Shutdown();
-    //void RunTest();
-    //bool RunCpuSmokeTest();
-    //bool RunGpuSmokeTest(ID3D12Device* dev, ID3D12CommandQueue* q);
-
     bool Init(const std::wstring& modelPath, ID3D12Device* dev, ID3D12CommandQueue* queue);
     bool PrepareIO(ID3D12Device* dev, UINT W, UINT H); // 입력/출력 버퍼 + DML 핸들 준비
     bool Run();                                        // IoBinding 실행 (GPU in/out)

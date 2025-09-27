@@ -125,7 +125,8 @@ ID3D12GraphicsCommandList7* DXContext::InitCommandList()
 
 void DXContext::ExecuteCommandList()
 {
-	if (FAILED(m_cmdList->Close()))
+	HRESULT hr = m_cmdList->Close();
+	if (FAILED(hr))
 	{
 		return;
 	}

@@ -3,6 +3,8 @@
 #include "Manager/DirectXManager.h"
 #include <comdef.h>
 
+
+
 #pragma comment(lib, "User32.lib")
 
 #ifdef UNICODE
@@ -125,7 +127,7 @@ void DXWindow::Update()
 	LogicUpdate();
 }
 
-void DXWindow::Preset()
+void DXWindow::Present()
 {
 	m_swapChain->Present(1, 0);//DXGI_PRESENT_DO_NOT_WAIT
 	m_currentBufferIndex = m_swapChain->GetCurrentBackBufferIndex();
@@ -232,8 +234,6 @@ void DXWindow::BegineFrame(ID3D12GraphicsCommandList7* cmdList)
 
 void DXWindow::EndFrame(ID3D12GraphicsCommandList7* cmdList)
 {
-	//m_currentBufferIndex = m_swapChain->GetCurrentBackBufferIndex();
-
 	D3D12_RESOURCE_BARRIER barr;
 	barr.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 	barr.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
@@ -268,6 +268,25 @@ RECT DXWindow::CreateScissorRect()
 	return scRect;
 }
 
+ComPointer<ID3D12Resource2> DXWindow::GetBackbuffer() const
+{
+	return m_buffers[m_currentBufferIndex];
+}
+
+void DXWindow::GetBackbufferSize(UINT& outW, UINT& outH) const
+{
+	ID3D12Resource* back = GetBackbuffer();
+	auto desc = back->GetDesc();
+	outW = static_cast<UINT>(desc.Width);
+	outH = desc.Height;
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE DXWindow::GetRtvHandle(size_t index)
+{
+	return m_rtvHandles[index];
+}
+
+
 void DXWindow::MessageUpdate()
 {
 	MSG msg;
@@ -287,6 +306,7 @@ void DXWindow::LogicUpdate()
 		DX_CONTEXT.Flush(DXWindow::GetFrameCount());
 		DX_WINDOW.Resize();
 
+		DX_MANAGER.Resize();
 		DX_MANAGER.ResizeOnnxResources(m_width, m_height);
 	}
 }

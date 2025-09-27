@@ -1,24 +1,28 @@
+StructuredBuffer<float> gCHW : register(t0); // 지금은 입력 버퍼 그대로 보냄(모델 바인딩 전까지)
+RWTexture2D<float4> gOut : register(u0); // UAV = R8G8B8A8_UNORM
 
-// cs_postprocess.hlsl : NCHW(float) → RGBA8
-StructuredBuffer<float> src : register(t0);
-RWTexture2D<uint> outTex : register(u0); // R8G8B8A8_UNORM
-cbuffer CB2 : register(b0)
+cbuffer CB : register(b0)
 {
     uint W;
     uint H;
-};
+    uint C;
+    uint _pad;
+}
 
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= W || id.y >= H)
         return;
-    uint idx = id.y * W + id.x;
+
+    uint base = id.y * W + id.x;
+    uint plane = W * H;
+
     float3 rgb = float3(
-    src[idx + 0 * H * W],
-    src[idx + 1 * H * W],
-    src[idx + 2 * H * W]);
-    rgb = saturate(rgb); // 필요시 scale
-    uint4 u = uint4(rgb * 255.0, 255);
-    outTex[id.xy] = (u.r) | (u.g << 8) | (u.b << 16) | (u.a << 24);
+        gCHW[base + 0 * plane],
+        gCHW[base + 1 * plane],
+        gCHW[base + 2 * plane]
+    );
+
+    gOut[id.xy] = float4(saturate(rgb), 1.0);
 }
