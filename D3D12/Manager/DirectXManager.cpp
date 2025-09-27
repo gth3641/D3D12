@@ -241,6 +241,11 @@ bool DirectXManager::Init()
 
 	InitShader();
 	InitBlitPipeline();
+
+	// ★ ONNX 초기화 (네 모델 경로 맞춰서)
+	DX_ONNX.Init(L"./Resources/Onnx/udnie-9.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue());
+
+	// ★ ONNX IO 준비 + 디스크립터 구성
 	CreateOnnxResources(w, h);
 
 	// 리소스 상태 초기화
@@ -282,73 +287,15 @@ void DirectXManager::UploadGPUResource(ID3D12GraphicsCommandList7* cmdList)
 
 void DirectXManager::CreateOnnxResources(UINT W, UINT H)
 {
-	onnx_.Width = W; onnx_.Height = H;
-
-	if (CreateOnnxComputePipeline() == false) return;
+	// ★ ONNX의 in/out 버퍼 생성(모델 shape 반영). 동적 입력이면 W,H 로 맞춰짐.
+	DX_ONNX.PrepareIO(DX_CONTEXT.GetDevice(), W, H);
 
 	ID3D12Device* dev = DX_CONTEXT.GetDevice();
 
-	// (2) 디스크립터 힙
-	{
-		D3D12_DESCRIPTOR_HEAP_DESC d{};
-		d.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-		d.NumDescriptors = 5;
-		d.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		dev->CreateDescriptorHeap(&d, IID_PPV_ARGS(&mOnnxGPU.Heap));
-	}
-	auto cpu = mOnnxGPU.Heap->GetCPUDescriptorHandleForHeapStart();
-	auto gpu = mOnnxGPU.Heap->GetGPUDescriptorHandleForHeapStart();
-	const UINT inc = dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	auto nthCPU = [&](UINT i) { auto h = cpu; h.ptr += i * inc; return h; };
-	auto nthGPU = [&](UINT i) { auto h = gpu; h.ptr += i * inc; return h; };
+	// ★ 컴퓨트 파이프라인 생성(Pre/Post 공용 RS)
+	if (!CreateOnnxComputePipeline()) return;
 
-	// (3) SceneColor SRV
-	{
-		D3D12_SHADER_RESOURCE_VIEW_DESC s{};
-		s.Format = mSceneColor->GetDesc().Format;
-		s.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		s.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		s.Texture2D.MipLevels = 1;
-		mOnnxGPU.SceneSRV_CPU = nthCPU(0);
-		mOnnxGPU.SceneSRV_GPU = nthGPU(0);
-		dev->CreateShaderResourceView(mSceneColor.Get(), &s, mOnnxGPU.SceneSRV_CPU);
-	}
-
-	// (4) InputNCHW (buffer: UAV+SRV)
-	{
-		size_t elems = (size_t)W * H * 3;
-		UINT64 bytes = (UINT64)elems * sizeof(float);
-		auto desc = CD3DX12_RESOURCE_DESC::Buffer(bytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-		CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
-		dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &desc,
-			D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&mOnnxGPU.InputNCHW));
-
-		// UAV
-		D3D12_UNORDERED_ACCESS_VIEW_DESC u{}; u.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-		u.Format = DXGI_FORMAT_UNKNOWN;
-		u.Buffer.FirstElement = 0;
-		u.Buffer.NumElements = (UINT)elems;
-		u.Buffer.StructureByteStride = sizeof(float);
-		u.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
-		mOnnxGPU.InputUAV_CPU = nthCPU(1);
-		mOnnxGPU.InputUAV_GPU = nthGPU(1);
-		dev->CreateUnorderedAccessView(mOnnxGPU.InputNCHW.Get(), nullptr, &u, mOnnxGPU.InputUAV_CPU);
-
-		// SRV
-		D3D12_SHADER_RESOURCE_VIEW_DESC s{};
-		s.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-		s.Format = DXGI_FORMAT_UNKNOWN;
-		s.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		s.Buffer.FirstElement = 0;
-		s.Buffer.NumElements = (UINT)elems;
-		s.Buffer.StructureByteStride = sizeof(float);
-		s.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-		mOnnxGPU.InputSRV_CPU = nthCPU(2);
-		mOnnxGPU.InputSRV_GPU = nthGPU(2);
-		dev->CreateShaderResourceView(mOnnxGPU.InputNCHW.Get(), &s, mOnnxGPU.InputSRV_CPU);
-	}
-
-	// (5) OnnxTex (UAV + SRV)
+	// === OnnxTex (최종 RGBA8) ===
 	{
 		D3D12_RESOURCE_DESC td{};
 		td.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -361,18 +308,84 @@ void DirectXManager::CreateOnnxResources(UINT W, UINT H)
 		CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
 		dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &td,
 			D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&mOnnxGPU.OnnxTex));
+	}
 
-		// UAV
+	// === 디스크립터 힙: Scene SRV, Input UAV, Output SRV, OnnxTex UAV, OnnxTex SRV ===
+	{
+		D3D12_DESCRIPTOR_HEAP_DESC d{};
+		d.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		d.NumDescriptors = 5; // 0..4
+		d.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		dev->CreateDescriptorHeap(&d, IID_PPV_ARGS(&mOnnxGPU.Heap));
+	}
+	auto cpu = mOnnxGPU.Heap->GetCPUDescriptorHandleForHeapStart();
+	auto gpu = mOnnxGPU.Heap->GetGPUDescriptorHandleForHeapStart();
+	const UINT inc = dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	auto nthCPU = [&](UINT i) { auto h = cpu; h.ptr += i * inc; return h; };
+	auto nthGPU = [&](UINT i) { auto h = gpu; h.ptr += i * inc; return h; };
+
+	// (0) SceneColor → SRV
+	{
+		D3D12_SHADER_RESOURCE_VIEW_DESC s{};
+		s.Format = mSceneColor->GetDesc().Format; // R16G16B16A16_FLOAT
+		s.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		s.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		s.Texture2D.MipLevels = 1;
+		mOnnxGPU.SceneSRV_CPU = nthCPU(0);
+		mOnnxGPU.SceneSRV_GPU = nthGPU(0);
+		dev->CreateShaderResourceView(mSceneColor.Get(), &s, mOnnxGPU.SceneSRV_CPU);
+	}
+
+	// (1) InputNCHW → UAV  (DX_ONNX.InputBuffer)
+	{
+		D3D12_UNORDERED_ACCESS_VIEW_DESC u{};
+		u.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+		u.Format = DXGI_FORMAT_UNKNOWN;
+		const auto& inShape = DX_ONNX.GetInputShape();
+		uint64_t elems = 1; for (auto d : inShape) elems *= (d > 0 ? (uint64_t)d : 1);
+		u.Buffer.FirstElement = 0;
+		u.Buffer.NumElements = (UINT)elems;
+		u.Buffer.StructureByteStride = sizeof(float);
+		u.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+
+		mOnnxGPU.InputUAV_CPU = nthCPU(1);
+		mOnnxGPU.InputUAV_GPU = nthGPU(1);
+		dev->CreateUnorderedAccessView(DX_ONNX.GetInputBuffer().Get(), nullptr, &u, mOnnxGPU.InputUAV_CPU);
+	}
+
+	// (2) OutputCHW → SRV (DX_ONNX.OutputBuffer)
+	{
+		D3D12_SHADER_RESOURCE_VIEW_DESC s{};
+		s.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+		s.Format = DXGI_FORMAT_UNKNOWN;
+		s.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+		const auto& osh = DX_ONNX.GetOutputShape();
+		uint64_t elems = 1; for (auto d : osh) elems *= (d > 0 ? (uint64_t)d : 1);
+		s.Buffer.FirstElement = 0;
+		s.Buffer.NumElements = (UINT)elems;
+		s.Buffer.StructureByteStride = sizeof(float);
+		s.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+
+		mOnnxGPU.ModelOutSRV_CPU = nthCPU(2);
+		mOnnxGPU.ModelOutSRV_GPU = nthGPU(2);
+		dev->CreateShaderResourceView(DX_ONNX.GetOutputBuffer().Get(), &s, mOnnxGPU.ModelOutSRV_CPU);
+	}
+
+	// (3) OnnxTex → UAV
+	{
 		D3D12_UNORDERED_ACCESS_VIEW_DESC u{};
 		u.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-		u.Format = td.Format;
+		u.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		mOnnxGPU.OnnxTexUAV_CPU = nthCPU(3);
 		mOnnxGPU.OnnxTexUAV_GPU = nthGPU(3);
 		dev->CreateUnorderedAccessView(mOnnxGPU.OnnxTex.Get(), nullptr, &u, mOnnxGPU.OnnxTexUAV_CPU);
+	}
 
-		// SRV
+	// (4) OnnxTex → SRV (blit)
+	{
 		D3D12_SHADER_RESOURCE_VIEW_DESC s{};
-		s.Format = td.Format;
+		s.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		s.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 		s.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 		s.Texture2D.MipLevels = 1;
@@ -381,58 +394,80 @@ void DirectXManager::CreateOnnxResources(UINT W, UINT H)
 		dev->CreateShaderResourceView(mOnnxGPU.OnnxTex.Get(), &s, mOnnxGPU.OnnxTexSRV_CPU);
 	}
 
-	// (6) CB(upload)
+	// (5) CB (업로드)
 	{
-		const UINT CBSize = (UINT)((sizeof(uint32_t) * 4 + 255) & ~255);
+		const UINT CBSize = (UINT)((sizeof(UINT) * 4 + 255) & ~255); // W,H,C,pad
 		auto desc = CD3DX12_RESOURCE_DESC::Buffer(CBSize);
 		CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_UPLOAD);
 		dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &desc,
 			D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&mOnnxGPU.CB));
 	}
 
-	DX_ONNX.PrepareIO(DX_CONTEXT.GetDevice(), W, H); // (DirectML 경로 쓸 때)
+	// 화면 사이즈 저장(디스패치에 사용)
+	onnx_.Width = W; onnx_.Height = H;
 }
 
 void DirectXManager::RecordPreprocess(ID3D12GraphicsCommandList7* cmd)
 {
-	// InputNCHW: COMMON → UAV
-	{
-		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
-			mOnnxGPU.InputNCHW.Get(), D3D12_RESOURCE_STATE_COMMON,
-			D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-		cmd->ResourceBarrier(1, &b);
-	}
+	// SceneColor: RenderOffscreen 끝에서 NON_PIXEL_SHADER_RESOURCE 상태여야 함
 
+   // 힙/RS/PSO
 	ID3D12DescriptorHeap* heaps[] = { mOnnxGPU.Heap.Get() };
 	cmd->SetDescriptorHeaps(1, heaps);
 	cmd->SetComputeRootSignature(onnx_.PreRS.Get());
 	cmd->SetPipelineState(onnx_.PrePSO.Get());
 
-	struct { UINT W, H, C, _pad; } CB{ onnx_.Width, onnx_.Height, 3, 0 };
+	// 모델 입력 W,H,C 계산 (NCHW 또는 NHWC 가정)
+	UINT inW = 1, inH = 1, inC = 3;
+	{
+		const auto& ish = DX_ONNX.GetInputShape();
+		if (ish.size() == 4) {
+			// NCHW: [N,C,H,W] 또는 NHWC: [N,H,W,C]
+			int64_t d0 = ish[0], d1 = ish[1], d2 = ish[2], d3 = ish[3];
+			if (d1 <= 4) { inC = (UINT)d1; inH = (UINT)d2; inW = (UINT)d3; } // NCHW
+			else { inH = (UINT)d1; inW = (UINT)d2; inC = (UINT)d3; }         // NHWC
+		}
+		else if (ish.size() == 3) {
+			// CHW / HWC
+			int64_t d0 = ish[0], d1 = ish[1], d2 = ish[2];
+			if (d0 <= 4) { inC = (UINT)d0; inH = (UINT)d1; inW = (UINT)d2; } // CHW
+			else { inH = (UINT)d0; inW = (UINT)d1; inC = (UINT)d2; }         // HWC
+		}
+		if (inC == 0) inC = 3;
+	}
+
+	// CB 업데이트 (W=네트워크 입력 너비, H=높이, C=채널)
+	struct { UINT W, H, C, _pad; } CB{ inW, inH, inC, 0 };
 	void* p = nullptr;
 	mOnnxGPU.CB->Map(0, nullptr, &p);
 	std::memcpy(p, &CB, sizeof(CB));
 	mOnnxGPU.CB->Unmap(0, nullptr);
 	cmd->SetComputeRootConstantBufferView(2, mOnnxGPU.CB->GetGPUVirtualAddress());
 
-	// t0=Scene SRV(NPSR 상태여야 OK), u0=InputNCHW UAV
+	// 루트 바인딩: t0=Scene SRV, u0=InputNCHW UAV
 	cmd->SetComputeRootDescriptorTable(0, mOnnxGPU.SceneSRV_GPU);
 	cmd->SetComputeRootDescriptorTable(1, mOnnxGPU.InputUAV_GPU);
 
+	// 디스패치: 모델 입력 해상도 기준
 	const UINT TGX = 8, TGY = 8;
-	cmd->Dispatch((onnx_.Width + TGX - 1) / TGX, (onnx_.Height + TGY - 1) / TGY, 1);
+	cmd->Dispatch((inW + TGX - 1) / TGX, (inH + TGY - 1) / TGY, 1);
 
-	// DML이 COMMON에서 SRV로 읽을거라면 되돌려두기(선택)
-	{
-		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
-			mOnnxGPU.InputNCHW.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-			D3D12_RESOURCE_STATE_COMMON);
-		cmd->ResourceBarrier(1, &b);
-	}
+	// UAV 쓰기 가시화
+	auto uav = CD3DX12_RESOURCE_BARRIER::UAV(DX_ONNX.GetInputBuffer().Get());
+	cmd->ResourceBarrier(1, &uav);
 }
 
 void DirectXManager::RecordPostprocess(ID3D12GraphicsCommandList7* cmd)
 {
+	// ★★★ ONNX 출력 버퍼: UAV(ORT가 방금 씀) → SRV 읽기용 상태로 바꾸기
+	{
+		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
+			DX_ONNX.GetOutputBuffer().Get(),
+			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+		cmd->ResourceBarrier(1, &b);
+	}
+
 	// OnnxTex: COMMON → UAV
 	{
 		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
@@ -443,30 +478,65 @@ void DirectXManager::RecordPostprocess(ID3D12GraphicsCommandList7* cmd)
 
 	ID3D12DescriptorHeap* heaps[] = { mOnnxGPU.Heap.Get() };
 	cmd->SetDescriptorHeaps(1, heaps);
-	cmd->SetComputeRootSignature(onnx_.PreRS.Get()); // 같은 RS
+	cmd->SetComputeRootSignature(onnx_.PreRS.Get());
 	cmd->SetPipelineState(onnx_.PostPSO.Get());
 
-	struct { UINT W, H, C, _pad; } CB{ onnx_.Width, onnx_.Height, 3, 0 };
+	// 출력 텐서 크기 from ONNX
+	UINT outW = 1, outH = 1, outC = 3;
+	{
+		const auto& osh = DX_ONNX.GetOutputShape();
+		if (osh.size() == 4) {
+			// [N,C,H,W] or [N,H,W,C]
+			if (osh[1] <= 4) { outC = (UINT)osh[1]; outH = (UINT)osh[2]; outW = (UINT)osh[3]; }
+			else { outH = (UINT)osh[1]; outW = (UINT)osh[2]; outC = (UINT)osh[3]; }
+		}
+		else if (osh.size() == 3) {
+			if (osh[0] <= 4) { outC = (UINT)osh[0]; outH = (UINT)osh[1]; outW = (UINT)osh[2]; }
+			else { outH = (UINT)osh[0]; outW = (UINT)osh[1]; outC = (UINT)osh[2]; }
+		}
+		if (!outC) outC = 3;
+	}
+
+	struct { UINT W, H, C, _pad; } CB{ outW, outH, outC, 0 };
 	void* p = nullptr;
 	mOnnxGPU.CB->Map(0, nullptr, &p);
 	std::memcpy(p, &CB, sizeof(CB));
 	mOnnxGPU.CB->Unmap(0, nullptr);
 	cmd->SetComputeRootConstantBufferView(2, mOnnxGPU.CB->GetGPUVirtualAddress());
 
-	// t0=InputNCHW SRV(or 모델 출력 SRV), u0=OnnxTex UAV
-	cmd->SetComputeRootDescriptorTable(0, mOnnxGPU.InputSRV_GPU);
+	// t0=ONNX Output SRV, u0=OnnxTex UAV
+	cmd->SetComputeRootDescriptorTable(0, mOnnxGPU.ModelOutSRV_GPU);
 	cmd->SetComputeRootDescriptorTable(1, mOnnxGPU.OnnxTexUAV_GPU);
 
 	const UINT TGX = 8, TGY = 8;
 	cmd->Dispatch((onnx_.Width + TGX - 1) / TGX, (onnx_.Height + TGY - 1) / TGY, 1);
 
-	// 그 다음 그래픽스에서 샘플할 수 있게 PSR로
+	// OnnxTex: UAV → PIXEL_SHADER_RESOURCE
 	{
 		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
-			mOnnxGPU.OnnxTex.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+			mOnnxGPU.OnnxTex.Get(),
+			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
 			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 		cmd->ResourceBarrier(1, &b);
 	}
+}
+
+void DirectXManager::RunOnnxGPU()
+{
+	// 필요시: 전처리에서 UAV로 쓴 InputNCHW가 COMMON이든 그대로든,
+	// ONNX(DML)에서 읽을 수 있게(대부분 COMMON/GENERIC_READ면 OK)
+	// 여기선 DML이 스스로 필요한 배리어를 잡는다고 가정.
+
+	// (1) 모델 입출력 바인딩
+	//   - 입력: mOnnxGPU.InputNCHW (float, 3*W*H)
+	//   - 출력: mOnnxGPU.OutputNCHW (float, C*W*H)
+//		const UINT C = 3; // 모델 출력 채널 수
+	//DX_ONNX.BindIO(
+	//	mOnnxGPU.InputNCHW.Get(), 3 * onnx_.Width * onnx_.Height,
+	//	mOnnxGPU.OutputNCHW.Get(), C * onnx_.Width * onnx_.Height);
+
+	// (2) 실행
+	DX_ONNX.Run();  // 내부에서 CommandQueue/Sync 처리
 }
 
 void DirectXManager::ResizeOnnxResources(UINT W, UINT H)
@@ -622,14 +692,12 @@ void DirectXManager::Resize()
 	UINT w, h;
 	DX_WINDOW.GetBackbufferSize(w, h);
 	CreateOffscreen(w, h);
-	ResizeOnnxResources(w, h);
+	CreateOnnxResources(w, h);
 }
 
 void DirectXManager::RenderOffscreen(ID3D12GraphicsCommandList7* cmd)
 {
-	auto device = DX_CONTEXT.GetDevice();
-
-	// 시작: 현재 상태 -> RENDER_TARGET
+	// SceneColor: ? -> RTV
 	if (mSceneColorState != D3D12_RESOURCE_STATE_RENDER_TARGET) {
 		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
 			mSceneColor.Get(), mSceneColorState, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -684,9 +752,12 @@ void DirectXManager::RenderOffscreen(ID3D12GraphicsCommandList7* cmd)
 	//cmd->ResourceBarrier(1, &b);
 	//mSceneColorState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
+	// RTV -> NON_PIXEL_SHADER_RESOURCE (전처리에서 SRV로 읽도록)
 	{
 		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
-			mSceneColor.Get(), mSceneColorState, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+			mSceneColor.Get(),
+			mSceneColorState,
+			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 		cmd->ResourceBarrier(1, &b);
 		mSceneColorState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 	}
@@ -912,7 +983,7 @@ void DirectXManager::BlitToBackbuffer(ID3D12GraphicsCommandList7* cmd)
 	cmd->SetGraphicsRoot32BitConstants(0, 3, color, 0);
 	cmd->SetGraphicsRoot32BitConstants(1, 2, &scb, 0);
 
-	// t0 = OnnxTex SRV
+	// ★ 여기서 mOnnxGPU.Heap + OnnxTex SRV 바인딩
 	ID3D12DescriptorHeap* heaps[] = { mOnnxGPU.Heap.Get() };
 	cmd->SetDescriptorHeaps(1, heaps);
 	cmd->SetGraphicsRootDescriptorTable(2, mOnnxGPU.OnnxTexSRV_GPU);

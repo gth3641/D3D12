@@ -223,6 +223,7 @@ private: // Variables
 
         // NCHW float 버퍼 (UAV로 씀/읽음)
         ComPointer<ID3D12Resource>       InputNCHW;  // RWStructuredBuffer<float>
+        ComPointer<ID3D12Resource>       OutputNCHW;  // RWStructuredBuffer<float>
         D3D12_CPU_DESCRIPTOR_HANDLE      InputUAV_CPU{};
         D3D12_GPU_DESCRIPTOR_HANDLE      InputUAV_GPU{};
         D3D12_CPU_DESCRIPTOR_HANDLE      InputSRV_CPU{}; // (포스트에서 SRV로 읽을 때)
@@ -235,6 +236,9 @@ private: // Variables
         D3D12_CPU_DESCRIPTOR_HANDLE      OnnxTexSRV_CPU{};
         D3D12_GPU_DESCRIPTOR_HANDLE      OnnxTexSRV_GPU{};
 
+        D3D12_CPU_DESCRIPTOR_HANDLE      ModelOutSRV_CPU{};
+        D3D12_GPU_DESCRIPTOR_HANDLE      ModelOutSRV_GPU{};
+
         // 전/후처리용 CB (업로드 버퍼, 256 정렬)
         ComPointer<ID3D12Resource>       CB;
     } mOnnxGPU;
@@ -242,6 +246,6 @@ private: // Variables
 
     void RecordPreprocess(ID3D12GraphicsCommandList7* cmd);
     void RecordPostprocess(ID3D12GraphicsCommandList7* cmd);
-
+    void RunOnnxGPU();
 };
 

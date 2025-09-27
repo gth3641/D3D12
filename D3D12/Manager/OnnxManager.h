@@ -42,6 +42,7 @@ public: // Functions
     ComPointer<ID3D12Resource> GetInputBuffer()  const { return inputBuf_; }
     ComPointer<ID3D12Resource> GetOutputBuffer() const { return outputBuf_; }
     const std::vector<int64_t>& GetOutputShape() const { return outShape_; }
+    const std::vector<int64_t>& GetInputShape() const { return inShape_; }
     //==================================//
 
 private: // Functions

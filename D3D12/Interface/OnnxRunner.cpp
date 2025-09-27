@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include <dml_provider_factory.h>
+#include "Manager/OnnxManager.h"
 
 OnnxRunner::OnnxRunner() : env(ORT_LOGGING_LEVEL_WARNING, "onnx"),
 sessionOpt{} {
@@ -197,3 +198,4 @@ bool OnnxRunner::Run(const float* nchwInput, int n, int c, int h, int w,
     std::memcpy(outBuffer.data(), src, outCount * sizeof(float));
     return true;
 }
+
