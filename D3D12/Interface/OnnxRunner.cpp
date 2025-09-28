@@ -10,7 +10,8 @@
 #include "Manager/OnnxManager.h"
 
 OnnxRunner::OnnxRunner() : env(ORT_LOGGING_LEVEL_WARNING, "onnx"),
-sessionOpt{} {
+sessionOpt{} 
+{
     sessionOpt.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
     // DirectML EP를 쓰고 싶다면 아래 한 줄을 유지 (미설치 환경에서도 CPU로 자동 폴백됨)
     // device_id=0

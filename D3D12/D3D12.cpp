@@ -33,31 +33,47 @@ int main()
             DX_WINDOW.Update();
             DX_MANAGER.BeginFrame();
 
-            ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
-            // 1) 전처리 제출
-            {
-                cmd = DX_CONTEXT.InitCommandList();
-                DX_MANAGER.RenderOffscreen(cmd);
-                DX_MANAGER.RecordPreprocess(cmd);   // 내부에서 Input: UAV→GENERIC_READ까지 처리
-                DX_CONTEXT.ExecuteCommandList();
-            }
+            //ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
+            //// 1) 전처리 제출
+            //{
+            //    cmd = DX_CONTEXT.InitCommandList();
+            //    DX_MANAGER.RenderOffscreen(cmd);
+            //    DX_MANAGER.RecordPreprocess(cmd);   // 내부에서 Input: UAV→GENERIC_READ까지 처리
+            //    DX_CONTEXT.ExecuteCommandList();
+            //}
 
-            // 2) ORT 실행
-            DX_ONNX.Run();
+            //// 2) ORT 실행
+            //DX_ONNX.Run();
 
-            // 3) 큐 동기화
-            DX_CONTEXT.SignalAndWait();
+            //// 3) 큐 동기화
+            //DX_CONTEXT.SignalAndWait();
 
-            // 4) 후처리 + 블릿 + 프레젠트
-            {
-                cmd = DX_CONTEXT.InitCommandList();
-                DX_WINDOW.BeginFrame(cmd);        
-                DX_MANAGER.RecordPostprocess(cmd);
-                DX_MANAGER.BlitToBackbuffer(cmd);
-                DX_WINDOW.EndFrame(cmd);
-                DX_CONTEXT.ExecuteCommandList();
-                DX_WINDOW.Present();
-            }
+            //// 4) 후처리 + 블릿 + 프레젠트
+            //{
+            //    cmd = DX_CONTEXT.InitCommandList();
+            //    DX_WINDOW.BeginFrame(cmd);        
+            //    DX_MANAGER.RecordPostprocess(cmd);
+            //    DX_MANAGER.BlitToBackbuffer(cmd);
+            //    DX_WINDOW.EndFrame(cmd);
+            //    DX_CONTEXT.ExecuteCommandList();
+            //    DX_WINDOW.Present();
+            //}
+
+            auto* cmd = DX_CONTEXT.InitCommandList();
+
+            DX_MANAGER.RenderOffscreen(cmd);      // Scene RTV -> 끝에서 NPSR로 전환
+            DX_MANAGER.RecordPreprocess(cmd);     // Scene SRV -> Input UAV -> UAV barrier -> GENERIC_READ
+            DX_CONTEXT.ExecuteCommandList();      // 네 Execute가 내부 Wait까지 하니 OK
+
+            DX_ONNX.Run();                        // DML 실행 (Input/Output에 기록)
+
+            cmd = DX_CONTEXT.InitCommandList();
+            DX_MANAGER.RecordPostprocess(cmd);    // Output SRV -> OnnxTex UAV -> (업샘플/후처리) -> OnnxTex PSR
+            DX_WINDOW.BeginFrame(cmd);            // 백버퍼 RTV 세팅 + 클리어
+            DX_MANAGER.BlitToBackbuffer(cmd);     // ★ OnnxTex를 화면에 풀스크린 블릿
+            DX_WINDOW.EndFrame(cmd);
+            DX_CONTEXT.ExecuteCommandList();
+            DX_WINDOW.Present();
         }
 
         DX_MANAGER.Shutdown();

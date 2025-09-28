@@ -8,6 +8,10 @@
 #include "Object/RenderingObject.h"
 #include "Interface/OnnxRunner.h"
 
+#include "d3dx12.h"
+#include "d3d12.h"
+#include <d3dcompiler.h>
+
 #include <onnxruntime_cxx_api.h>
 
 #define DX_MANAGER DirectXManager::Get()
@@ -235,8 +239,8 @@ private: // Variables
 
         // 최종 출력 텍스처 (RGBA8, UAV/ SRV 둘 다)
         ComPointer<ID3D12Resource>       OnnxTex;    // RWTexture2D<unorm float4>
-        D3D12_CPU_DESCRIPTOR_HANDLE      OnnxTexUAV_CPU{};
-        D3D12_GPU_DESCRIPTOR_HANDLE      OnnxTexUAV_GPU{};
+        CD3DX12_CPU_DESCRIPTOR_HANDLE      OnnxTexUAV_CPU{};
+        CD3DX12_GPU_DESCRIPTOR_HANDLE      OnnxTexUAV_GPU{};
         D3D12_CPU_DESCRIPTOR_HANDLE      OnnxTexSRV_CPU{};
         D3D12_GPU_DESCRIPTOR_HANDLE      OnnxTexSRV_GPU{};
 
@@ -251,6 +255,19 @@ private: // Variables
     void RecordPreprocess(ID3D12GraphicsCommandList7* cmd);
     void RecordPostprocess(ID3D12GraphicsCommandList7* cmd);
     void RunOnnxGPU();
-    void CreateFullscreenQuadVB();
+    void CreateFullscreenQuadVB(UINT w, UINT h);
+
+    ComPointer<ID3D12RootSignature> m_BlitRS2;
+    ComPointer<ID3D12PipelineState>  m_BlitPSO2;
+
+    bool CreateSimpleBlitPipeline();
+    void DebugFillOnnxTex(ID3D12GraphicsCommandList7* cmd);
+
+    ComPointer<ID3D12RootSignature> m_RS_Green;
+    ComPointer<ID3D12PipelineState>  m_PSO_Green;
+    bool CreateGreenPipeline();
+    void DrawConstantGreen(ID3D12GraphicsCommandList7* cmd);
+
+    void DrawConstantGreen_Standalone();
 };
 

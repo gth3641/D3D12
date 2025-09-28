@@ -129,6 +129,7 @@ void DXWindow::Update()
 
 void DXWindow::Present()
 {
+	m_currentBufferIndex = m_swapChain->GetCurrentBackBufferIndex();
 	m_swapChain->Present(1, 0);//DXGI_PRESENT_DO_NOT_WAIT
 	m_currentBufferIndex = m_swapChain->GetCurrentBackBufferIndex();
 }
@@ -215,7 +216,6 @@ void DXWindow::SetFullScreen(bool enabled)
 
 void DXWindow::BeginFrame(ID3D12GraphicsCommandList7* cmdList)
 {
-	m_currentBufferIndex = m_swapChain->GetCurrentBackBufferIndex();
 
 	D3D12_RESOURCE_BARRIER barr;
 	barr.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -227,7 +227,7 @@ void DXWindow::BeginFrame(ID3D12GraphicsCommandList7* cmdList)
 
 	cmdList->ResourceBarrier(1, &barr);
 
-	float clearColor[] = { 1.f, 0.5f, 0.5f, 1.f };
+	float clearColor[] = { 1.0f, 1.0f, 1.f, 1.f };
 	cmdList->ClearRenderTargetView(m_rtvHandles[m_currentBufferIndex], clearColor, 0, nullptr);
 	cmdList->OMSetRenderTargets(1, &m_rtvHandles[m_currentBufferIndex], false, nullptr);
 }
@@ -266,6 +266,11 @@ RECT DXWindow::CreateScissorRect()
 	scRect.bottom = GetHeight();
 
 	return scRect;
+}
+
+void DXWindow::UpdateBackBuffer()
+{
+	m_currentBufferIndex = m_swapChain->GetCurrentBackBufferIndex();
 }
 
 ComPointer<ID3D12Resource2> DXWindow::GetBackbuffer() const

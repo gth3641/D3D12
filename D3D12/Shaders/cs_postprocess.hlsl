@@ -1,28 +1,73 @@
-// 루트파라미터: b0(상수), t0(ONNX 출력 SRV  structured buffer float), u0(RGBA8 UAV)
+// cs_postprocess.hlsl
+StructuredBuffer<float> gOut : register(t0); // CHW, len = SrcW*SrcH*SrcC
+RWTexture2D<unorm float4> gDst : register(u0); // 화면크기 텍스처
+
 cbuffer CB : register(b0)
 {
-    uint W; // 출력 텐서 폭
-    uint H; // 출력 텐서 높이
-    uint C; // 채널 수(1/3/4 등)
-    uint _pad;
+    uint SrcW;
+    uint SrcH;
+    uint SrcC;
+    uint _r0;
+    uint DstW;
+    uint DstH;
+    uint _r1;
+    uint _r2;
 }
 
-StructuredBuffer<float> gOut : register(t0); // DX12: Buffer SRV with StructureByteStride=4
-RWTexture2D<float4> gDst : register(u0); // UAV: R8G8B8A8_UNORM (float4 0..1로 기록)
+float sampleCHW_bilinear(uint c, float2 uv)
+{
+    float2 p = uv * float2(SrcW, SrcH) - 0.5;
+    int2 p0 = int2(floor(p));
+    float2 f = frac(p);
+
+    int x0 = clamp(p0.x, 0, (int) SrcW - 1);
+    int y0 = clamp(p0.y, 0, (int) SrcH - 1);
+    int x1 = min(x0 + 1, (int) SrcW - 1);
+    int y1 = min(y0 + 1, (int) SrcH - 1);
+
+    uint plane = SrcW * SrcH;
+    uint i00 = y0 * SrcW + x0;
+    uint i10 = y0 * SrcW + x1;
+    uint i01 = y1 * SrcW + x0;
+    uint i11 = y1 * SrcW + x1;
+
+    float v00 = gOut[i00 + c * plane];
+    float v10 = gOut[i10 + c * plane];
+    float v01 = gOut[i01 + c * plane];
+    float v11 = gOut[i11 + c * plane];
+
+    float vx0 = lerp(v00, v10, f.x);
+    float vx1 = lerp(v01, v11, f.x);
+    return lerp(vx0, vx1, f.y);
+}
 
 [numthreads(8, 8, 1)]
-void main(uint3 id : SV_DispatchThreadID)
+void main(uint3 dtid : SV_DispatchThreadID)
 {
-    if (id.x >= W || id.y >= H)
+    if (dtid.x >= DstW || dtid.y >= DstH)
         return;
 
-    uint idx = id.y * W + id.x;
-    uint plane = W * H;
+    float2 uv = (dtid.xy + 0.5) / float2(DstW, DstH);
+    // 필요하면 뒤집기: uv.y = 1.0 - uv.y;
 
-    float r = (C > 0) ? gOut[idx + 0 * plane] : 0.0;
-    float g = (C > 1) ? gOut[idx + 1 * plane] : r;
-    float b = (C > 2) ? gOut[idx + 2 * plane] : r;
+    float r = (SrcC > 0) ? sampleCHW_bilinear(0, uv) : 0.0;
+    float g = (SrcC > 1) ? sampleCHW_bilinear(1, uv) : r;
+    float b = (SrcC > 2) ? sampleCHW_bilinear(2, uv) : r;
 
-    // 필요시 범위 보정(예: -1..1 → 0..1, 0..255 → 0..1)을 여기서 수행
-    gDst[uint2(id.xy)] = saturate(float4(r, g, b, 1.0));
+    // 간단 범위 보정
+    float mx = max(r, max(g, b)), mn = min(r, min(g, b));
+    if (mx > 2.0)
+    {
+        r *= 1.0 / 255.0;
+        g *= 1.0 / 255.0;
+        b *= 1.0 / 255.0;
+    }
+    else if (mn < -0.1)
+    {
+        r = r * 0.5 + 0.5;
+        g = g * 0.5 + 0.5;
+        b = b * 0.5 + 0.5;
+    }
+
+    gDst[dtid.xy] = float4(saturate(r), saturate(g), saturate(b), 1);
 }

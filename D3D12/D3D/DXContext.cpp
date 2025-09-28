@@ -110,8 +110,6 @@ void DXContext::SignalAndWait()
 	{
 		std::exit(EXIT_FAILURE);
 	}
-	
-
 
 }
 
