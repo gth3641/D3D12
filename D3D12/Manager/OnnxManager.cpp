@@ -19,19 +19,22 @@ bool OnnxManager::Init(const std::wstring& modelPath, ID3D12Device* dev, ID3D12C
     so_.DisableMemPattern();
     so_.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
     so_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+    so_.SetIntraOpNumThreads(1);
 
-    // DML1: 내 DX12 디바이스/큐를 사용
     ComPointer<IDMLDevice> dml;
-    THROW_IF_FAILED(DMLCreateDevice(dev, DML_CREATE_DEVICE_FLAG_NONE, IID_PPV_ARGS(&dml)));
+    THROW_IF_FAILED(DMLCreateDevice(dev_, DML_CREATE_DEVICE_FLAG_NONE, IID_PPV_ARGS(&dml)));
 
     Ort::ThrowOnError(Ort::GetApi().GetExecutionProviderApi("DML", ORT_API_VERSION,
         reinterpret_cast<const void**>(&dmlApi_)));
-    Ort::ThrowOnError(dmlApi_->SessionOptionsAppendExecutionProvider_DML1(so_, dml.Get(), queue));
+    Ort::ThrowOnError(dmlApi_->SessionOptionsAppendExecutionProvider_DML1(so_, dml.Get(), queue_));
 
-    // 세션 생성
+    // 세션 생성 (env_는 클래스 멤버로, 세션보다 오래 살아야 함)
     session_ = std::make_unique<Ort::Session>(env_, modelPath.c_str(), so_);
 
-    // IO 메타 읽기
+    // ★ DML MemoryInfo를 "대문자 DML"로 생성자 사용해 1회 생성
+    miDml_ = Ort::MemoryInfo("DML", OrtAllocatorType::OrtDeviceAllocator, /*device_id*/0, OrtMemTypeDefault);
+
+    // IO 메타
     Ort::AllocatorWithDefaultOptions alloc;
     auto inName = session_->GetInputNameAllocated(0, alloc);
     auto outName = session_->GetOutputNameAllocated(0, alloc);
@@ -49,15 +52,18 @@ bool OnnxManager::Init(const std::wstring& modelPath, ID3D12Device* dev, ID3D12C
 bool OnnxManager::PrepareIO(ID3D12Device* dev, UINT W, UINT H)
 {
     auto fixShape = [&](std::vector<int64_t>& s) {
-        // NCHW 가정: -1 이면 H/W 로 치환(필요시 너 모델에 맞게 조정)
-        for (size_t i = 0; i < s.size(); ++i) if (s[i] < 0) {
-            // 대충: 채널/배치는 1, 공간은 W/H
-            if (i == 2) s[i] = (int64_t)H;
-            else if (i == 3) s[i] = (int64_t)W;
-            else s[i] = 1;
+        for (size_t i = 0; i < s.size(); ++i) {
+            if (s[i] < 0) {
+                if (i == 0) s[i] = 1;               // N
+                else if (i == 1) s[i] = 3;          // C (모델에 맞게 조정)
+                else if (i == 2) s[i] = (int64_t)H; // H
+                else if (i == 3) s[i] = (int64_t)W; // W
+                else s[i] = 1;
+            }
         }
         };
-    fixShape(inShape_); fixShape(outShape_);
+    fixShape(inShape_);
+    fixShape(outShape_);
 
     auto bytesOf = [](const std::vector<int64_t>& s, size_t elemBytes) {
         uint64_t n = 1; for (auto d : s) n *= (uint64_t)d; return n * elemBytes;
@@ -74,7 +80,10 @@ bool OnnxManager::PrepareIO(ID3D12Device* dev, UINT W, UINT H)
     THROW_IF_FAILED(dev->CreateCommittedResource(&hpDef, D3D12_HEAP_FLAG_NONE, &rdOut,
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&outputBuf_)));
 
-    // DML GPU allocation 핸들 생성
+    inputBuf_->SetName(L"ORT_InputBuffer");
+    outputBuf_->SetName(L"ORT_OutputBuffer");
+
+    // DML GPU allocation 핸들
     Ort::ThrowOnError(dmlApi_->CreateGPUAllocationFromD3DResource(inputBuf_.Get(), &inAlloc_));
     Ort::ThrowOnError(dmlApi_->CreateGPUAllocationFromD3DResource(outputBuf_.Get(), &outAlloc_));
     return true;
@@ -82,38 +91,41 @@ bool OnnxManager::PrepareIO(ID3D12Device* dev, UINT W, UINT H)
 
 bool OnnxManager::Run()
 {
-    // GPU in/out 텐서 바인딩 → 실행
-    Ort::MemoryInfo miDml("DML", OrtDeviceAllocator, 0, OrtMemTypeDefault);
-
-    {
+    try {
+        // CreateGPUAllocationFromD3DResource 로 만든 핸들을 그대로 p_data 로 준다
         Ort::Value inTensor = Ort::Value::CreateTensor(
-            miDml, inAlloc_, inBytes_, inShape_.data(), inShape_.size(),
+            miDml_,               // ← 멤버로 보관한 DML MemoryInfo
+            inAlloc_,             // void* (DML EP allocation handle)
+            inBytes_,             // 바이트 수
+            inShape_.data(), inShape_.size(),
             ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
 
         Ort::Value outTensor = Ort::Value::CreateTensor(
-            miDml, outAlloc_, outBytes_, outShape_.data(), outShape_.size(),
+            miDml_,
+            outAlloc_,
+            outBytes_,
+            outShape_.data(), outShape_.size(),
             ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
 
         Ort::IoBinding binding(*session_);
         binding.BindInput(inName_.c_str(), inTensor);
         binding.BindOutput(outName_.c_str(), outTensor);
 
-        try {
-            session_->Run(Ort::RunOptions{ nullptr }, binding);
-        }
-        catch (const Ort::Exception& e) {
-            OutputDebugStringA((std::string("ORT Run failed: ") + e.what() + "\n").c_str());
-            binding.ClearBoundInputs(); binding.ClearBoundOutputs();
-            return false;
-        }
-        binding.ClearBoundInputs(); binding.ClearBoundOutputs();
+        session_->Run(Ort::RunOptions{ nullptr }, binding);
+       
+        binding.ClearBoundInputs(); 
+        binding.ClearBoundOutputs();
+    }
+    catch (const Ort::Exception& e) {
+        OutputDebugStringA((std::string("ORT Run failed: ") + e.what() + "\n").c_str());
+        return false;
     }
     return true;
+
 }
 
 void OnnxManager::ResizeIO(ID3D12Device* dev, UINT W, UINT H)
 {
-    // 기존 핸들/버퍼 해제 후 PrepareIO 재호출
     if (inAlloc_) { dmlApi_->FreeGPUAllocation(inAlloc_);  inAlloc_ = nullptr; }
     if (outAlloc_) { dmlApi_->FreeGPUAllocation(outAlloc_); outAlloc_ = nullptr; }
     inputBuf_.Release();
@@ -127,5 +139,7 @@ void OnnxManager::Shutdown()
     if (outAlloc_) { dmlApi_->FreeGPUAllocation(outAlloc_); outAlloc_ = nullptr; }
     inputBuf_.Release();
     outputBuf_.Release();
+
     session_.reset();
 }
+

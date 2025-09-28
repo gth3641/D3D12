@@ -17,7 +17,7 @@ public:
 	void Resize();
 	void SetFullScreen(bool enabled);
 
-	void BegineFrame(ID3D12GraphicsCommandList7* cmdList);
+	void BeginFrame(ID3D12GraphicsCommandList7* cmdList);
 	void EndFrame(ID3D12GraphicsCommandList7* cmdList);
 
 	D3D12_VIEWPORT CreateViewport();
