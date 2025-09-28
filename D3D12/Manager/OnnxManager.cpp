@@ -15,14 +15,18 @@ bool OnnxManager::Init(const std::wstring& modelPath, ID3D12Device* dev, ID3D12C
 {
     dev_ = dev; queue_ = queue;
 
-    so_ = Ort::SessionOptions{};
-    so_.DisableMemPattern();
-    so_.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
-    so_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-    so_.SetIntraOpNumThreads(1);
+    //const OrtApi* ort = OrtGetApiBase()->GetApi(ORT_API_VERSION);
+    //Ort::ThrowOnError(ort->GetAvailableProviders(nullptr, nullptr)); // 단순 호출로 로딩 보장
 
     ComPointer<IDMLDevice> dml;
     THROW_IF_FAILED(DMLCreateDevice(dev_, DML_CREATE_DEVICE_FLAG_NONE, IID_PPV_ARGS(&dml)));
+
+    so_ = Ort::SessionOptions{};
+    so_.DisableMemPattern();
+    so_.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+    so_.SetIntraOpNumThreads(0);
+    so_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+
 
     Ort::ThrowOnError(Ort::GetApi().GetExecutionProviderApi("DML", ORT_API_VERSION,
         reinterpret_cast<const void**>(&dmlApi_)));
@@ -72,8 +76,8 @@ bool OnnxManager::PrepareIO(ID3D12Device* dev, UINT W, UINT H)
     outBytes_ = (UINT64)bytesOf(outShape_, sizeof(float));
 
     CD3DX12_HEAP_PROPERTIES hpDef(D3D12_HEAP_TYPE_DEFAULT);
-    auto rdIn = CD3DX12_RESOURCE_DESC::Buffer(inBytes_, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-    auto rdOut = CD3DX12_RESOURCE_DESC::Buffer(outBytes_, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    CD3DX12_RESOURCE_DESC rdIn = CD3DX12_RESOURCE_DESC::Buffer(inBytes_, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    CD3DX12_RESOURCE_DESC rdOut = CD3DX12_RESOURCE_DESC::Buffer(outBytes_, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
     THROW_IF_FAILED(dev->CreateCommittedResource(&hpDef, D3D12_HEAP_FLAG_NONE, &rdIn,
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&inputBuf_)));

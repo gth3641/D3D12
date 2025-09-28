@@ -49,7 +49,6 @@ private: // Functions
 
 private: // Variables
 
-    ComPointer<IDMLDevice> m_Dml;
     Ort::MemoryInfo miDml_{ nullptr };
 
     Ort::Env env_{ ORT_LOGGING_LEVEL_WARNING, "app" };

@@ -1,45 +1,31 @@
-// 루트파라미터: b0(상수), t0(SceneColor SRV), u0(ONNX 입력 UAV structured buffer float)
+Texture2D<float4> gScene : register(t0);
+SamplerState gSamp : register(s0);
+RWStructuredBuffer<float> gInput : register(u0);
+
 cbuffer CB : register(b0)
 {
-    uint W; // 네트워크 입력 폭
-    uint H; // 네트워크 입력 높이
-    uint C; // 채널 수(보통 3)
+    uint W; // 네트워크 입력 너비(224)
+    uint H; // 네트워크 입력 높이(224)
+    uint C; // 채널(보통 3)
     uint _pad;
-}
-
-Texture2D<float4> gSrc : register(t0); // R16G16B16A16_FLOAT SRV
-SamplerState gSamp : register(s0); // 루트시그에 넣어둔 static sampler(Clamp/Linear)
-RWStructuredBuffer<float> gDst : register(u0); // DX12 UAV Buffer(Stride=4)
+};
 
 [numthreads(8, 8, 1)]
-void main(uint3 id : SV_DispatchThreadID)
+void main(uint3 dtid : SV_DispatchThreadID)
 {
-    if (id.x >= W || id.y >= H)
+    uint x = dtid.x, y = dtid.y;
+    if (x >= W || y >= H)
         return;
 
-    // 소스와 입력 크기가 같다고 가정. 다르면 uv 스케일 추가 필요!
-    float2 uv = (float2(id.xy) + 0.5) / float2(W, H);
-    float4 c = gSrc.SampleLevel(gSamp, uv, 0);
+    // 장면은 SceneColor 해상도, 모델 입력은 W,H → uv로 리샘플
+    float2 uv = (float2(x + 0.5, y + 0.5) / float2(W, H));
+    float3 rgb = gScene.SampleLevel(gSamp, uv, 0).rgb;
 
-    uint idx = id.y * W + id.x;
+    uint idx = y * W + x;
     uint plane = W * H;
 
-    if (C >= 3)
-    {
-        gDst[idx + 0 * plane] = c.r;
-        gDst[idx + 1 * plane] = c.g;
-        gDst[idx + 2 * plane] = c.b;
-    }
-    else if (C == 1)
-    {
-        float y = dot(c.rgb, float3(0.299, 0.587, 0.114));
-        gDst[idx] = y;
-    }
-    else
-    {
-        if (C > 0)
-            gDst[idx + 0 * plane] = c.r;
-        if (C > 1)
-            gDst[idx + 1 * plane] = c.g;
-    }
+    // NCHW로 써넣기
+    gInput[idx + 0 * plane] = rgb.r;
+    gInput[idx + 1 * plane] = rgb.g;
+    gInput[idx + 2 * plane] = rgb.b;
 }

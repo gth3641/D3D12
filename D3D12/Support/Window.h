@@ -36,10 +36,12 @@ public:
 		return FrameCount;
 	}
 
+	void UpdateBackBuffer();
+
 	ComPointer<ID3D12Resource2> GetBackbuffer() const;
 	void GetBackbufferSize(UINT& outW, UINT& outH) const;
 
-	size_t GetBackBufferIndex() const { return m_currentBufferIndex; }
+	size_t GetBackBufferIndex() { return m_currentBufferIndex; }
 	D3D12_CPU_DESCRIPTOR_HANDLE GetRtvHandle(size_t index);
 
 	ComPointer<ID3D12DescriptorHeap> GetRtvDescHeap() { return m_rtvDescHeap; }
