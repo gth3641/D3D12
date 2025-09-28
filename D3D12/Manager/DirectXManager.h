@@ -199,6 +199,8 @@ private: // Variables
     // 최종 합성용 텍스처(기존 mResolved를 UAV 가능하게 바꿔 사용)
     ComPointer<ID3D12Resource> mResolved;
     D3D12_RESOURCE_STATES       mResolvedState = D3D12_RESOURCE_STATE_COMMON;
+    D3D12_RESOURCE_STATES mOnnxTexState = D3D12_RESOURCE_STATE_COMMON;
+    D3D12_RESOURCE_STATES mOnnxInputState{ D3D12_RESOURCE_STATE_COMMON };
 
     // 컴퓨트 전용 SRV/UAV 힙
     ComPointer<ID3D12DescriptorHeap> mCSHeap;         // ★ 추가: shader-visible, SRV/UAV 모음
@@ -206,6 +208,8 @@ private: // Variables
     enum { kSlot_SceneSRV = 0, kSlot_InputUAV = 1, kSlot_OutputSRV = 2, kSlot_ResolvedUAV = 3 };
     D3D12_CPU_DESCRIPTOR_HANDLE mCS_CPU[4]{};         // ★ 추가
     D3D12_GPU_DESCRIPTOR_HANDLE mCS_GPU[4]{};
+
+    // DirectXManager.h (private:)
 
     // 씬 컬러의 SRV, mResolved의 SRV는 기존 m_BlitSrvHeap에 있음
     // (m_BlitSrvHeap는 그래픽스 블릿 전용 힙으로 유지)
@@ -247,5 +251,6 @@ private: // Variables
     void RecordPreprocess(ID3D12GraphicsCommandList7* cmd);
     void RecordPostprocess(ID3D12GraphicsCommandList7* cmd);
     void RunOnnxGPU();
+    void CreateFullscreenQuadVB();
 };
 

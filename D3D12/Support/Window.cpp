@@ -213,7 +213,7 @@ void DXWindow::SetFullScreen(bool enabled)
 	m_isFullscreen = enabled;
 }
 
-void DXWindow::BegineFrame(ID3D12GraphicsCommandList7* cmdList)
+void DXWindow::BeginFrame(ID3D12GraphicsCommandList7* cmdList)
 {
 	m_currentBufferIndex = m_swapChain->GetCurrentBackBufferIndex();
 

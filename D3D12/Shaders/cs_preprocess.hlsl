@@ -1,41 +1,45 @@
-// t0: OutputCHW (StructuredBuffer<float>)
-// u0: OnnxTex (RWTexture2D<uint>)  // R8G8B8A8_UNORM as uint-packed
-// b0: { uint SrcW, SrcH, Channels, _pad }  // 모델 출력 크기 기준
-
-StructuredBuffer<float> gOutCHW : register(t0);
-RWTexture2D<uint> gDst          : register(u0);
-cbuffer CB : register(b0) { uint SrcW; uint SrcH; uint Channels; uint _pad; };
-
-[numthreads(8,8,1)]
-void main(uint3 dtid : SV_DispatchThreadID)
+// 루트파라미터: b0(상수), t0(SceneColor SRV), u0(ONNX 입력 UAV structured buffer float)
+cbuffer CB : register(b0)
 {
-    uint dstW, dstH;
-    gDst.GetDimensions(dstW, dstH);
-    if (dtid.x >= dstW || dtid.y >= dstH) return;
+    uint W; // 네트워크 입력 폭
+    uint H; // 네트워크 입력 높이
+    uint C; // 채널 수(보통 3)
+    uint _pad;
+}
 
-    // dst 해상도 → src 해상도 비례 좌표
-    float2 uv = (float2(dtid.xy) + 0.5) / float2(dstW, dstH);
-    float2 src = uv * float2(SrcW, SrcH);
+Texture2D<float4> gSrc : register(t0); // R16G16B16A16_FLOAT SRV
+SamplerState gSamp : register(s0); // 루트시그에 넣어둔 static sampler(Clamp/Linear)
+RWStructuredBuffer<float> gDst : register(u0); // DX12 UAV Buffer(Stride=4)
 
-    uint x = (uint)src.x, y = (uint)src.y;
-    uint srcIdx = y * SrcW + x;
-    uint plane  = SrcW * SrcH;
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= W || id.y >= H)
+        return;
 
-    float r=0,g=0,b=0;
-    if (Channels >= 3) {
-        r = gOutCHW[srcIdx + 0 * plane];
-        g = gOutCHW[srcIdx + 1 * plane];
-        b = gOutCHW[srcIdx + 2 * plane];
-    } else if (Channels == 1) {
-        r = g = b = gOutCHW[srcIdx];
+    // 소스와 입력 크기가 같다고 가정. 다르면 uv 스케일 추가 필요!
+    float2 uv = (float2(id.xy) + 0.5) / float2(W, H);
+    float4 c = gSrc.SampleLevel(gSamp, uv, 0);
+
+    uint idx = id.y * W + id.x;
+    uint plane = W * H;
+
+    if (C >= 3)
+    {
+        gDst[idx + 0 * plane] = c.r;
+        gDst[idx + 1 * plane] = c.g;
+        gDst[idx + 2 * plane] = c.b;
     }
-
-    // 0..1 가정(필요시 범위 정규화 추가)
-    r = saturate(r); g = saturate(g); b = saturate(b);
-    uint ur = (uint)round(r * 255.0);
-    uint ug = (uint)round(g * 255.0);
-    uint ub = (uint)round(b * 255.0);
-    uint ua = 255u;
-
-    gDst[dtid.xy] = (ua << 24) | (ub << 16) | (ug << 8) | ur;
+    else if (C == 1)
+    {
+        float y = dot(c.rgb, float3(0.299, 0.587, 0.114));
+        gDst[idx] = y;
+    }
+    else
+    {
+        if (C > 0)
+            gDst[idx + 0 * plane] = c.r;
+        if (C > 1)
+            gDst[idx + 1 * plane] = c.g;
+    }
 }

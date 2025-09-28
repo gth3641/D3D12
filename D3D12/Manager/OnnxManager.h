@@ -50,12 +50,7 @@ private: // Functions
 private: // Variables
 
     ComPointer<IDMLDevice> m_Dml;
-
-    //Ort::Env env_{ ORT_LOGGING_LEVEL_WARNING, "app" };
-    //Ort::SessionOptions so_;
-    //std::unique_ptr<Ort::Session> session_;
-    //std::vector<std::string> inputNames_, outputNames_;
-
+    Ort::MemoryInfo miDml_{ nullptr };
 
     Ort::Env env_{ ORT_LOGGING_LEVEL_WARNING, "app" };
     Ort::SessionOptions so_;

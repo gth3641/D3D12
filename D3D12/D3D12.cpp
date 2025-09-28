@@ -20,46 +20,46 @@ int main()
 {
     if (DX_CONTEXT.Init() && DX_WINDOW.Init())
     {
-        DX_ONNX.Init(L"./Resources/Onnx/udnie-9.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()); // DML
+        // (A) ONNX 초기화는 '한 곳'에서만. 여기서 하려면 ↓ 유지하고 DX_Manager 쪽은 삭제
+        DX_ONNX.Init(L"./Resources/Onnx/udnie-9.onnx",
+            DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue());
+
         DX_IMAGE.Init();
         DX_MANAGER.Init();
-      //  DX_MANAGER.CreateOnnxResources(DX_WINDOW.GetWidth(), DX_WINDOW.GetHeight());
         { auto* c = DX_CONTEXT.InitCommandList(); DX_MANAGER.UploadGPUResource(c); DX_CONTEXT.ExecuteCommandList(); }
 
-        // 루프
         while (!DX_WINDOW.ShouldClose())
         {
             DX_WINDOW.Update();
             DX_MANAGER.BeginFrame();
 
-            // 1) 오프스크린 렌더 + Preprocess (Scene → InputNCHW)
+            ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
+            // 1) 전처리 제출
             {
-                ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
-                DX_MANAGER.RenderOffscreen(cmd);       // mSceneColor: RT→NON_PIXEL_SHADER_RESOURCE 로 전환 포함
-                DX_MANAGER.RecordPreprocess(cmd);      // t0=Scene SRV, u0=Input UAV(ONNX)
-                DX_CONTEXT.ExecuteCommandList();       // ★ 반드시 먼저 제출
+                cmd = DX_CONTEXT.InitCommandList();
+                DX_MANAGER.RenderOffscreen(cmd);
+                DX_MANAGER.RecordPreprocess(cmd);   // 내부에서 Input: UAV→GENERIC_READ까지 처리
+                DX_CONTEXT.ExecuteCommandList();
             }
 
-            // 2) ONNX 실행 (DML) — 같은 큐에 enqueue
+            // 2) ORT 실행
             DX_ONNX.Run();
 
-            // ★ 간단히 동기화(확실히 하려면 Flush/펜스). DX_CONTEXT.Flush() 같은게 있으면 그거 사용.
-            DX_CONTEXT.SignalAndWait(); // 없으면 큐에 Fence Signal/Wait 구현해서 한 번 대기
+            // 3) 큐 동기화
+            DX_CONTEXT.SignalAndWait();
 
-            // 3) Postprocess (OutputCHW → OnnxTex) + Blit + Present
+            // 4) 후처리 + 블릿 + 프레젠트
             {
-                ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
-                DX_WINDOW.BegineFrame(cmd);
-                DX_MANAGER.RecordPostprocess(cmd);     // t0=Output SRV(ONNX), u0=OnnxTex UAV
-                DX_MANAGER.BlitToBackbuffer(cmd);      // OnnxTex SRV → 백버퍼
+                cmd = DX_CONTEXT.InitCommandList();
+                DX_WINDOW.BeginFrame(cmd);        
+                DX_MANAGER.RecordPostprocess(cmd);
+                DX_MANAGER.BlitToBackbuffer(cmd);
                 DX_WINDOW.EndFrame(cmd);
                 DX_CONTEXT.ExecuteCommandList();
                 DX_WINDOW.Present();
             }
         }
 
-
-        // 종료
         DX_MANAGER.Shutdown();
         DX_IMAGE.Shutdown();
         DX_ONNX.Shutdown();
