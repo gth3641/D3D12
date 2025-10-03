@@ -314,6 +314,8 @@ void DXWindow::LogicUpdate()
 		DX_MANAGER.Resize();
 		DX_MANAGER.ResizeOnnxResources(m_width, m_height);
 	}
+
+	DX_MANAGER.Update();
 }
 
 bool DXWindow::GetBuffers()

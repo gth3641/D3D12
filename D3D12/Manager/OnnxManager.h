@@ -33,16 +33,16 @@ public: // Static & Override
   
 public: // Functions
     bool Init(const std::wstring& modelPath, ID3D12Device* dev, ID3D12CommandQueue* queue);
-    bool PrepareIO(ID3D12Device* dev, UINT W, UINT H); // 입력/출력 버퍼 + DML 핸들 준비
-    bool Run();                                        // IoBinding 실행 (GPU in/out)
+    bool PrepareIO(ID3D12Device* dev, UINT W, UINT H); 
+    bool Run();                                       
     void ResizeIO(ID3D12Device* dev, UINT W, UINT H);
     void Shutdown();
 
     //===========Getter=================//
-    ComPointer<ID3D12Resource> GetInputBuffer()  const { return inputBuf_; }
-    ComPointer<ID3D12Resource> GetOutputBuffer() const { return outputBuf_; }
-    const std::vector<int64_t>& GetOutputShape() const { return outShape_; }
-    const std::vector<int64_t>& GetInputShape() const { return inShape_; }
+    ComPointer<ID3D12Resource> GetInputBuffer()  const { return m_InputBuf; }
+    ComPointer<ID3D12Resource> GetOutputBuffer() const { return m_OutputBuf; }
+    const std::vector<int64_t>& GetOutputShape() const { return m_OutShape; }
+    const std::vector<int64_t>& GetInputShape() const { return m_InShape; }
     //==================================//
 
 private: // Functions
@@ -52,22 +52,22 @@ private: // Variables
     Ort::MemoryInfo miDml_{ nullptr };
 
     Ort::Env env_{ ORT_LOGGING_LEVEL_WARNING, "app" };
-    Ort::SessionOptions so_;
-    std::unique_ptr<Ort::Session> session_;
-    const OrtDmlApi* dmlApi_ = nullptr;
+    Ort::SessionOptions m_So;
+    std::unique_ptr<Ort::Session> m_Session;
+    const OrtDmlApi* m_DmlApi = nullptr;
 
     // 모델 IO
-    std::string inName_, outName_;
-    std::vector<int64_t> inShape_, outShape_;
+    std::string m_InName, m_OutName;
+    std::vector<int64_t> m_InShape, m_OutShape;
 
     // GPU IO
-    ComPointer<ID3D12Device> dev_;
-    ComPointer<ID3D12CommandQueue> queue_;
-    ComPointer<ID3D12Resource> inputBuf_;
-    ComPointer<ID3D12Resource> outputBuf_;
-    void* inAlloc_ = nullptr;  // DML GPU allocation 핸들
-    void* outAlloc_ = nullptr;
-    UINT64 inBytes_ = 0, outBytes_ = 0;
+    ComPointer<ID3D12Device> m_Dev;
+    ComPointer<ID3D12CommandQueue> m_Queue;
+    ComPointer<ID3D12Resource> m_InputBuf;
+    ComPointer<ID3D12Resource> m_OutputBuf;
+    void* m_InAlloc = nullptr;  // DML GPU allocation 핸들
+    void* m_OutAlloc = nullptr;
+    UINT64 m_InBytes = 0, m_OutBytes = 0;
 
 };
 
