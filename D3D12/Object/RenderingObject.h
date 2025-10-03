@@ -27,13 +27,13 @@ public: // Functions
 
 	int GetVertexCount();
 	void AddTriangle(const Vertex* vertex, size_t size);
+	std::vector<Triangle>& GetTriangle() { return m_Triangle; }
+	void UploadCPUResource();
 
 private: // Functions
 	void AddTexture(const std::filesystem::path& imagePath);
 	void UploadTextureBuffer();
-	//void CreateDescriptorHipForTexture();
 	void CreateSRV();
-	void UploadCPUResource();
 
 private: // Variables
 	std::vector<Triangle> m_Triangle;

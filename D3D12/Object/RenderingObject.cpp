@@ -132,6 +132,10 @@ void RenderingObject::UploadCPUResource()
 	uploadRange.Begin = 0;
 	uploadRange.End = 1024 + m_Image->GetTextureSize();
 	m_UploadBuffer->Map(0, &uploadRange, (void**)&uploadBufferAddress);
+	if (uploadBufferAddress == nullptr)
+	{
+		return; //수정 필요.
+	}
 	memcpy(&uploadBufferAddress[0], m_Image->GetTextureData().data.data(), m_Image->GetTextureSize());
 
 	size_t size = GetTriangleIndex();

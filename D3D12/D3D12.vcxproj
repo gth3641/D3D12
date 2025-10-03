@@ -143,7 +143,6 @@
     <ClCompile Include="D3D12.cpp" />
     <ClCompile Include="D3D\DXContext.cpp" />
     <ClCompile Include="DebugD3D12\DebugLayer.cpp" />
-    <ClCompile Include="Interface\OnnxRunner.cpp" />
     <ClCompile Include="Manager\DirectXManager.cpp" />
     <ClCompile Include="Manager\ImageManager.cpp" />
     <ClCompile Include="Manager\OnnxManager.cpp" />
@@ -157,7 +156,6 @@
   <ItemGroup>
     <ClInclude Include="D3D\DXContext.h" />
     <ClInclude Include="DebugD3D12\DebugLayer.h" />
-    <ClInclude Include="Interface\OnnxRunner.h" />
     <ClInclude Include="Manager\DirectXManager.h" />
     <ClInclude Include="Manager\ImageManager.h" />
     <ClInclude Include="Manager\OnnxManager.h" />
