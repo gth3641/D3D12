@@ -121,9 +121,6 @@ private: // Functions
     bool CreateOffscreen(uint32_t w, uint32_t h);
     void DestroyOffscreen();
 
-
-    void RunOnnxGPU();
-
     bool CreateSimpleBlitPipeline();
     void CreateFullscreenQuadVB(UINT w, UINT h);
 
@@ -171,28 +168,36 @@ private: // Variables
 
 private:
     struct {
-        // 전/후처리 공용 힙 (SRV+UAV 몇 개)
-        ComPointer<ID3D12DescriptorHeap> Heap;   // shader visible, 4~5개 슬롯 정도
+        // 디스크립터 힙
+        ComPointer<ID3D12DescriptorHeap> Heap;
 
-        // SceneColor -> SRV (t0, Preprocess에서 읽음)
+        // Scene SRV
         D3D12_CPU_DESCRIPTOR_HANDLE SceneSRV_CPU{};
         D3D12_GPU_DESCRIPTOR_HANDLE SceneSRV_GPU{};
 
-        // NCHW float 버퍼 (UAV로 씀/읽음)
-        D3D12_CPU_DESCRIPTOR_HANDLE      InputUAV_CPU{};
-        D3D12_GPU_DESCRIPTOR_HANDLE      InputUAV_GPU{};
+        // Input (content/style) UAV
+        D3D12_CPU_DESCRIPTOR_HANDLE InputContentUAV_CPU{};
+        D3D12_GPU_DESCRIPTOR_HANDLE InputContentUAV_GPU{};
+        D3D12_CPU_DESCRIPTOR_HANDLE InputStyleUAV_CPU{};
+        D3D12_GPU_DESCRIPTOR_HANDLE InputStyleUAV_GPU{};
 
-        // 최종 출력 텍스처 (RGBA8, UAV/ SRV 둘 다)
-        ComPointer<ID3D12Resource>       OnnxTex;    
-        CD3DX12_CPU_DESCRIPTOR_HANDLE    OnnxTexUAV_CPU{};
-        CD3DX12_GPU_DESCRIPTOR_HANDLE    OnnxTexUAV_GPU{};
-        D3D12_CPU_DESCRIPTOR_HANDLE      OnnxTexSRV_CPU{};
-        D3D12_GPU_DESCRIPTOR_HANDLE      OnnxTexSRV_GPU{};
+        // ModelOut SRV  ★★ 새로 필요 ★★
+        D3D12_CPU_DESCRIPTOR_HANDLE ModelOutSRV_CPU{};
+        D3D12_GPU_DESCRIPTOR_HANDLE ModelOutSRV_GPU{};
 
-        D3D12_CPU_DESCRIPTOR_HANDLE      ModelOutSRV_CPU{};
-        D3D12_GPU_DESCRIPTOR_HANDLE      ModelOutSRV_GPU{};
+        // 
+        D3D12_CPU_DESCRIPTOR_HANDLE StyleSRV_CPU{};
+        D3D12_GPU_DESCRIPTOR_HANDLE StyleSRV_GPU{};
 
-        ComPointer<ID3D12Resource>       CB;
+        // OnnxTex UAV/SRV
+        ComPointer<ID3D12Resource> OnnxTex;
+        D3D12_CPU_DESCRIPTOR_HANDLE OnnxTexUAV_CPU{};
+        D3D12_GPU_DESCRIPTOR_HANDLE OnnxTexUAV_GPU{};
+        D3D12_CPU_DESCRIPTOR_HANDLE OnnxTexSRV_CPU{};
+        D3D12_GPU_DESCRIPTOR_HANDLE OnnxTexSRV_GPU{};
+
+        // CB
+        ComPointer<ID3D12Resource> CB;
     } mOnnxGPU;
 
 
@@ -209,5 +214,12 @@ private: // Variables
 
 #pragma endregion
 
+
+public:
+    void WriteSceneSRVToSlot0();
+    void WriteStyleSRVToSlot6(ID3D12Resource* styleTex, DXGI_FORMAT fmt);
+
+private:
+    RenderingObject m_StyleObject;
 };
 

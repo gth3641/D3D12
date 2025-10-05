@@ -23,8 +23,12 @@ int main()
 {
     if (DX_CONTEXT.Init() && DX_WINDOW.Init())
     {
-        DX_ONNX.Init(L"./Resources/Onnx/udnie-9.onnx",
-            DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue());
+//        DX_ONNX.Init(L"./Resources/Onnx/udnie-9.onnx",
+//            DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue());
+
+		DX_ONNX.Init(L"./Resources/Onnx/adain_end2end.onnx",
+			DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue());
+
 
         DX_IMAGE.Init();
         DX_MANAGER.Init();
