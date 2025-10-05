@@ -45,5 +45,12 @@ private: // Variables
 
 	INT64 m_TestIndex = 0;
 
+	D3D12_PLACED_SUBRESOURCE_FOOTPRINT m_TexFootprint{};
+	UINT   m_TexNumRows = 0;
+	UINT64 m_TexRowSizeInBytes = 0;  // = width * BPP (패딩 없음)
+	UINT64 m_TexUploadSize = 0;      // 전체 텍스처 업로드 크기(패딩 포함)
+	UINT64 m_GeomOffsetInUpload = 0; // 업로드 버퍼 내에서 VB가 시작되는 오프셋
+	UINT64 m_VBSize = 0;             // 전체 버텍스 데이터 바이트 수
+
 };
 
