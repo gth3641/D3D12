@@ -181,6 +181,11 @@ private:
         D3D12_CPU_DESCRIPTOR_HANDLE InputStyleUAV_CPU{};
         D3D12_GPU_DESCRIPTOR_HANDLE InputStyleUAV_GPU{};
 
+        D3D12_CPU_DESCRIPTOR_HANDLE InputContentSRV_CPU{};
+        D3D12_GPU_DESCRIPTOR_HANDLE InputContentSRV_GPU{};
+        D3D12_CPU_DESCRIPTOR_HANDLE InputStyleSRV_CPU{};
+        D3D12_GPU_DESCRIPTOR_HANDLE InputStyleSRV_GPU{};
+
         // ModelOut SRV  ★★ 새로 필요 ★★
         D3D12_CPU_DESCRIPTOR_HANDLE ModelOutSRV_CPU{};
         D3D12_GPU_DESCRIPTOR_HANDLE ModelOutSRV_GPU{};
@@ -195,6 +200,9 @@ private:
         D3D12_GPU_DESCRIPTOR_HANDLE OnnxTexUAV_GPU{};
         D3D12_CPU_DESCRIPTOR_HANDLE OnnxTexSRV_CPU{};
         D3D12_GPU_DESCRIPTOR_HANDLE OnnxTexSRV_GPU{};
+
+        D3D12_GPU_DESCRIPTOR_HANDLE InputStyleUAV_GPU_ForClear{};
+        D3D12_CPU_DESCRIPTOR_HANDLE InputStyleUAV_CPU_ForClear{};;
 
         // CB
         ComPointer<ID3D12Resource> CB;
@@ -221,5 +229,21 @@ public:
 
 private:
     RenderingObject m_StyleObject;
+
+public:
+    void Debug_ShowPreprocessedToScreen(ID3D12GraphicsCommandList7* cmd, bool showContent);
+    void Debug_CopyStyleToScreen(ID3D12GraphicsCommandList7* cmd);
+    void Debug_DumpOrtOutput(ID3D12GraphicsCommandList7* cmd);
+    void Debug_DumpBuffer(ID3D12Resource* src, const char* tag);
+
+    
+    ComPointer<ID3D12PipelineState> m_DebugShowInputPSO;
+    ComPointer<ID3D12PipelineState> m_CopyTexToTex2DPSO;
+    ComPointer<ID3D12PipelineState> m_FillPSO;
+    ComPointer<ID3D12DescriptorHeap> mHeapCPU;
+
+
+    std::vector<ComPointer<ID3D12Resource>> mKeepAliveUploads;
+    void EndFrameUploads() { mKeepAliveUploads.clear(); }
 };
 

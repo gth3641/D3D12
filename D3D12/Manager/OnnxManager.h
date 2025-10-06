@@ -3,6 +3,7 @@
 #include "D3D/DXContext.h"
 #include "Support/ComPointer.h"
 #include "Util/Util.h"
+#include "OnnxRunner/OnnxRunnerInterface.h"
 
 #include <string>
 #include <vector>
@@ -10,6 +11,7 @@
 #include <DirectML.h>
 #include <onnxruntime_cxx_api.h>
 #include <dml_provider_factory.h>
+#include <memory>
 
 #define DX_ONNX OnnxManager::Get()
 
@@ -55,75 +57,17 @@ public: // Functions
 
     //===========Getter=================//
     // 새 게터(명시적): content/style 입력 버퍼와 shape
-    ComPointer<ID3D12Resource> GetContentInputBuffer() const { return m_InputBufContent; }
-    ComPointer<ID3D12Resource> GetStyleInputBuffer()   const { return m_InputBufStyle; }
-    ComPointer<ID3D12Resource> GetOutputBuffer()       const { return m_OutputBuf; }
-
-    const std::vector<int64_t>& GetContentInputShape() const { return m_InShapeContent; }
-    const std::vector<int64_t>& GetStyleInputShape()   const { return m_InShapeStyle; }
-    const std::vector<int64_t>& GetOutputShape()       const { return m_OutShape; }
-
-    // 기존 코드 호환용 alias(내용상 content 입력을 가리킴)
-    ComPointer<ID3D12Resource> GetInputBuffer()  const { return m_InputBufContent; }
-    const std::vector<int64_t>& GetInputShape()  const { return m_InShapeContent; }
-
-    ComPointer<ID3D12Resource> GetInputBufferContent() const { return m_InputBufContent; }
-    ComPointer<ID3D12Resource> GetInputBufferStyle()   const { return m_InputBufStyle; }
-    const std::vector<int64_t>& GetInputShapeContent() const { return m_InShapeContent; }
-    const std::vector<int64_t>& GetInputShapeStyle()   const { return m_InShapeStyle; }
+    ComPointer<ID3D12Resource> GetOutputBuffer()       const { return OnnxRunner->GetOutputBuffer(); }
+    ComPointer<ID3D12Resource> GetInputBufferContent() const { return OnnxRunner->GetInputBufferContent(); }
+    ComPointer<ID3D12Resource> GetInputBufferStyle()   const { return OnnxRunner->GetInputBufferStyle(); }
+    const std::vector<int64_t>& GetOutputShape()       const { return OnnxRunner->GetOutputShape(); }
+    const std::vector<int64_t>& GetInputShapeContent() const { return OnnxRunner->GetInputShapeContent(); }
+    const std::vector<int64_t>& GetInputShapeStyle()   const { return OnnxRunner->GetInputShapeStyle(); }
     //==================================//
 
 
-    bool RunCPUOnce_Debug();
-    bool Run_FillInputsHalf_Debug();
-
-private: // Functions
-    void AllocateOutputForShape(const std::vector<int64_t>& shape);
-    inline uint64_t BytesOf(const std::vector<int64_t>& shape, size_t elemBytes)
-    {
-        uint64_t n = 1;
-        for (auto d : shape)
-            n *= static_cast<uint64_t>(d > 0 ? d : 1); // 동적(-1) 차원은 임시로 1로 취급
-        return n * static_cast<uint64_t>(elemBytes);
-    }
-private: // Variables
-
-    // ORT/DML
-    Ort::Env           m_Env{ ORT_LOGGING_LEVEL_WARNING, "app" };
-    Ort::SessionOptions m_So;
-    std::unique_ptr<Ort::Session> m_Session;
-    const OrtDmlApi* m_DmlApi = nullptr;
-
-    // DML 메모리 정보 (GPU)
-    Ort::MemoryInfo miDml_{ nullptr }; // Init에서 "DML"로 채움
-
-    // 디바이스/큐(약한 참조 래핑)
-    ComPointer<ID3D12Device>        m_Dev;
-    ComPointer<ID3D12CommandQueue>  m_Queue;
-
-    // 모델 IO 이름
-    std::string m_InNameContent; // input[0] : "content"
-    std::string m_InNameStyle;   // input[1] : "style"
-    std::string m_OutName;       // output[0]: "stylized"
-
-    // 모델 IO shape (동적일 수 있음; PrepareIO 후 확정치로 갱신)
-    std::vector<int64_t> m_InShapeContent; // 보통 [-1,3,-1,-1] → [1,3,Hc,Wc]
-    std::vector<int64_t> m_InShapeStyle;   // 보통 [-1,3,-1,-1] → [1,3,Hs,Ws]
-    std::vector<int64_t> m_OutShape;       // 보통 [-1,3,-1,-1] → [1,3,Ho,Wo] (Ho/Wo는 8의 배수)
-
-    // GPU 버퍼 + DML allocation 핸들
-    ComPointer<ID3D12Resource> m_InputBufContent; // content NCHW FP32
-    ComPointer<ID3D12Resource> m_InputBufStyle;   // style   NCHW FP32
-    ComPointer<ID3D12Resource> m_OutputBuf;       // output  NCHW FP32
-    void* m_InAllocContent = nullptr; // DML GPU allocation handle
-    void* m_InAllocStyle = nullptr;
-    void* m_OutAlloc = nullptr;
-
-    // 바이트 크기
-    UINT64 m_InBytesContent = 0;
-    UINT64 m_InBytesStyle = 0;
-    UINT64 m_OutBytes = 0;
-
+private:
+    std::unique_ptr<OnnxRunnerInterface> OnnxRunner = nullptr;
 
 };
 

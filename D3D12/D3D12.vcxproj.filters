@@ -54,6 +54,15 @@
     <ClCompile Include="Manager\OnnxManager.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="OnnxRunner\OnnxRunnerInterface.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="OnnxRunner\OnnxRunner_AdaIN.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="OnnxRunner\OnnxRunner_Udnie.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="D3D\DXContext.h">
@@ -101,6 +110,15 @@
     <ClInclude Include="Manager\OnnxManager.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="OnnxRunner\OnnxRunnerInterface.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="OnnxRunner\OnnxRunner_AdaIN.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="OnnxRunner\OnnxRunner_Udnie.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Shaders\RootSignature.hlsl">
@@ -136,12 +154,23 @@
     <FxCompile Include="Shaders\vs_green.hlsl">
       <Filter>소스 파일\Shader</Filter>
     </FxCompile>
+    <FxCompile Include="Shaders\cs_copy_tex_to_tex2d.hlsl">
+      <Filter>소스 파일\Shader</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\cs_debug_show_input.hlsl">
+      <Filter>소스 파일\Shader</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\cs_fill_buffer.hlsl">
+      <Filter>소스 파일\Shader</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Pipeline.hlsli">
       <Filter>소스 파일\Shader</Filter>
     </None>
     <None Include="packages.config" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime_providers_shared.dll" />
     <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />
     <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime_providers_shared.dll" />
     <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />

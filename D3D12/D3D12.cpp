@@ -15,19 +15,16 @@
 #include "D3D/DXContext.h"
 #include "Util/Util.h"
 
-
 #define USE_ONNX
+#define DEBUG_DUMP 0
 
 #ifdef USE_ONNX
 int main()
 {
     if (DX_CONTEXT.Init() && DX_WINDOW.Init())
     {
-//        DX_ONNX.Init(L"./Resources/Onnx/udnie-9.onnx",
-//            DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue());
-
-		DX_ONNX.Init(L"./Resources/Onnx/adain_end2end.onnx",
-			DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue());
+        //DX_ONNX.Init(L"./Resources/Onnx/udnie-9.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue());
+		DX_ONNX.Init(L"./Resources/Onnx/adain_end2end.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue());
 
 
         DX_IMAGE.Init();
@@ -37,45 +34,34 @@ int main()
         while (!DX_WINDOW.ShouldClose())
         {
             DX_WINDOW.Update();
+			{
+				ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
+				DX_MANAGER.RenderOffscreen(cmd);
+				DX_MANAGER.RecordPreprocess(cmd);          
 
-            /*auto* cmd = DX_CONTEXT.InitCommandList();
+				DX_CONTEXT.ExecuteCommandList();        
+				DX_CONTEXT.SignalAndWait();             
+				DX_MANAGER.EndFrameUploads();
+#if DEBUG_DUMP
+				DX_MANAGER.Debug_DumpBuffer(DX_ONNX.GetInputBufferContent().Get(), "CONTENT");
+				DX_MANAGER.Debug_DumpBuffer(DX_ONNX.GetInputBufferStyle().Get(), "STYLE");
+#endif
 
-            DX_MANAGER.RenderOffscreen(cmd);     
-            DX_MANAGER.RecordPreprocess(cmd);    
-            DX_CONTEXT.ExecuteCommandList();     
+			}
 
-            DX_ONNX.Run();                       
-
-            cmd = DX_CONTEXT.InitCommandList();
-            DX_MANAGER.RecordPostprocess(cmd);   
-            DX_WINDOW.BeginFrame(cmd);           
-            DX_MANAGER.BlitToBackbuffer(cmd);    
-            DX_WINDOW.EndFrame(cmd);
-            DX_CONTEXT.ExecuteCommandList();
-            DX_WINDOW.Present();*/
-
-			auto cmd = DX_CONTEXT.InitCommandList();
-			DX_MANAGER.RenderOffscreen(cmd);
-			DX_CONTEXT.ExecuteCommandList();
-
-			// 2) 전처리(컨텐츠/스타일 → Input UAV 채우기)
-			cmd = DX_CONTEXT.InitCommandList();
-			DX_MANAGER.RecordPreprocess(cmd);
-			DX_CONTEXT.ExecuteCommandList();
-
-			// 3) ORT Run (DML EP가 같은 큐에 커맨드 enqueue)
+			// ORT 실행은 반드시 전처리 제출/대기 후
 			DX_ONNX.Run();
 
-			// 4) 후처리(ModelOut → OnnxTex UAV)
-			cmd = DX_CONTEXT.InitCommandList();
-			DX_MANAGER.RecordPostprocess(cmd);
-			DX_CONTEXT.ExecuteCommandList();
+			// CL #2: 후처리(ORT 출력 SRV -> OnnxTex UAV) + 스크린 블릿
+			{
+				ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
+				DX_MANAGER.RecordPostprocess(cmd);
+				DX_MANAGER.BlitToBackbuffer(cmd);
+				DX_CONTEXT.ExecuteCommandList();
+				DX_MANAGER.EndFrameUploads();
+				DX_WINDOW.Present();
+			}
 
-			// 5) 블릿(OnnxTex SRV → 백버퍼)
-			cmd = DX_CONTEXT.InitCommandList();
-			DX_MANAGER.BlitToBackbuffer(cmd);
-			DX_CONTEXT.ExecuteCommandList();
-			DX_WINDOW.Present();
         }
 
         DX_MANAGER.Shutdown();
