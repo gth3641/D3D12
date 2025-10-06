@@ -38,7 +38,7 @@ int main()
         {
             DX_WINDOW.Update();
 
-            auto* cmd = DX_CONTEXT.InitCommandList();
+            /*auto* cmd = DX_CONTEXT.InitCommandList();
 
             DX_MANAGER.RenderOffscreen(cmd);     
             DX_MANAGER.RecordPreprocess(cmd);    
@@ -52,7 +52,30 @@ int main()
             DX_MANAGER.BlitToBackbuffer(cmd);    
             DX_WINDOW.EndFrame(cmd);
             DX_CONTEXT.ExecuteCommandList();
-            DX_WINDOW.Present();
+            DX_WINDOW.Present();*/
+
+			auto cmd = DX_CONTEXT.InitCommandList();
+			DX_MANAGER.RenderOffscreen(cmd);
+			DX_CONTEXT.ExecuteCommandList();
+
+			// 2) 전처리(컨텐츠/스타일 → Input UAV 채우기)
+			cmd = DX_CONTEXT.InitCommandList();
+			DX_MANAGER.RecordPreprocess(cmd);
+			DX_CONTEXT.ExecuteCommandList();
+
+			// 3) ORT Run (DML EP가 같은 큐에 커맨드 enqueue)
+			DX_ONNX.Run();
+
+			// 4) 후처리(ModelOut → OnnxTex UAV)
+			cmd = DX_CONTEXT.InitCommandList();
+			DX_MANAGER.RecordPostprocess(cmd);
+			DX_CONTEXT.ExecuteCommandList();
+
+			// 5) 블릿(OnnxTex SRV → 백버퍼)
+			cmd = DX_CONTEXT.InitCommandList();
+			DX_MANAGER.BlitToBackbuffer(cmd);
+			DX_CONTEXT.ExecuteCommandList();
+			DX_WINDOW.Present();
         }
 
         DX_MANAGER.Shutdown();

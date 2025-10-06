@@ -28,99 +28,90 @@ bool OnnxManager::Init(const std::wstring& modelPath, ID3D12Device* dev, ID3D12C
 {
     m_Dev = dev; m_Queue = queue;
 
-    // DML 디바이스
     ComPointer<IDMLDevice> dml;
     THROW_IF_FAILED(DMLCreateDevice(m_Dev, DML_CREATE_DEVICE_FLAG_NONE, IID_PPV_ARGS(&dml)));
 
-    // 세션 옵션 (DML 권장)
     m_So = Ort::SessionOptions{};
-    m_So.DisableMemPattern();
+    m_So.DisableMemPattern(); // 유지
     m_So.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
     m_So.SetIntraOpNumThreads(0);
     m_So.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
-    // DML EP 붙이기 (우리 D3D12 디바이스/큐 사용)
-    Ort::ThrowOnError(Ort::GetApi().GetExecutionProviderApi("DML", ORT_API_VERSION,
-        reinterpret_cast<const void**>(&m_DmlApi)));
-    Ort::ThrowOnError(m_DmlApi->SessionOptionsAppendExecutionProvider_DML1(m_So, dml.Get(), m_Queue));
+    // DML EP API 획득 + 동일 큐 연결
+    Ort::ThrowOnError(Ort::GetApi().GetExecutionProviderApi(
+        "DML", ORT_API_VERSION, reinterpret_cast<const void**>(&m_DmlApi)));
+    Ort::ThrowOnError(m_DmlApi->SessionOptionsAppendExecutionProvider_DML1(
+        m_So, dml.Get(), m_Queue));
 
-    // 세션
     m_Session = std::make_unique<Ort::Session>(m_Env, modelPath.c_str(), m_So);
-    miDml_ = Ort::MemoryInfo("DML", OrtAllocatorType::OrtDeviceAllocator, /*device_id*/0, OrtMemTypeDefault);
 
-    // 입력/출력 이름/shape
+    // ★ 대소문자는 ORT 버전에 따라 "DML" / "Dml" 모두 동작하나, 일관되게 "DML" 권장
+    miDml_ = Ort::MemoryInfo("DML", OrtAllocatorType::OrtDeviceAllocator, 0, OrtMemTypeDefault);
+
+    // IO 메타데이터(이름/shape 복사)
     Ort::AllocatorWithDefaultOptions alloc;
-    size_t inCount = m_Session->GetInputCount();
-    size_t outCount = m_Session->GetOutputCount();
-
-    // AdaIN end2end: 입력 2개 (content, style), 출력 1개 (stylized) 가정
-    if (inCount < 2 || outCount < 1) {
-        OutputDebugStringA("Unexpected IO count: expect 2 inputs and 1 output.\n");
-        return false;
+    {
+        auto inName0 = m_Session->GetInputNameAllocated(0, alloc);
+        m_InNameContent = inName0.get();
+        auto info0 = m_Session->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo();
+        m_InShapeContent = info0.GetShape();
     }
-
-    // input 0: content
-    auto inName0 = m_Session->GetInputNameAllocated(0, alloc);
-    m_InNameContent = inName0.get();
-    auto inInfo0 = m_Session->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo();
-    m_InShapeContent = inInfo0.GetShape();   // 보통 [-1,3,-1,-1]
-
-    // input 1: style
-    auto inName1 = m_Session->GetInputNameAllocated(1, alloc);
-    m_InNameStyle = inName1.get();
-    auto inInfo1 = m_Session->GetInputTypeInfo(1).GetTensorTypeAndShapeInfo();
-    m_InShapeStyle = inInfo1.GetShape();
-
-    // output 0
-    auto outName0 = m_Session->GetOutputNameAllocated(0, alloc);
-    m_OutName = outName0.get();
-    auto outInfo0 = m_Session->GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo();
-    m_OutShape = outInfo0.GetShape();
-
+    {
+        auto inName1 = m_Session->GetInputNameAllocated(1, alloc);
+        m_InNameStyle = inName1.get();
+        auto info1 = m_Session->GetInputTypeInfo(1).GetTensorTypeAndShapeInfo();
+        m_InShapeStyle = info1.GetShape();
+    }
+    {
+        auto outName0 = m_Session->GetOutputNameAllocated(0, alloc);
+        m_OutName = outName0.get();
+        auto oinfo0 = m_Session->GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo();
+        m_OutShape = oinfo0.GetShape(); // 동적 모델이면 보통 음수 포함
+    }
     return true;
 }
 
 bool OnnxManager::PrepareIO(ID3D12Device* dev, UINT contentW, UINT contentH, UINT styleW, UINT styleH)
 {
-    // 입력 shape 확정
-    auto inShapeContent = m_InShapeContent;
+    // 1) 입력 shape 확정
+    auto inShapeContent = m_InShapeContent; // [-1,3,-1,-1] 등
     auto inShapeStyle = m_InShapeStyle;
     FillDynamicNCHW(inShapeContent, 1, 3, (int)contentH, (int)contentW);
     FillDynamicNCHW(inShapeStyle, 1, 3, (int)styleH, (int)styleW);
 
-    // 바이트수
+    // 2) 바이트 수 (오버플로우 방지 위해 uint64_t로 계산하는 BytesOf 사용 권장)
     m_InBytesContent = BytesOf(inShapeContent, sizeof(float));
     m_InBytesStyle = BytesOf(inShapeStyle, sizeof(float));
+    if (m_InBytesContent == 0 || m_InBytesStyle == 0) return false;
 
-    // 기존 입력 리소스 해제
+    // 3) 기존 입력 리소스/할당 해제 (GPU가 사용 중이면 호출 전 동기화 필요)
     if (m_InAllocContent) { m_DmlApi->FreeGPUAllocation(m_InAllocContent); m_InAllocContent = nullptr; }
     if (m_InAllocStyle) { m_DmlApi->FreeGPUAllocation(m_InAllocStyle);   m_InAllocStyle = nullptr; }
     m_InputBufContent.Release();
     m_InputBufStyle.Release();
 
-    // 입력 버퍼만 생성
+    // 4) UAV 버퍼 생성 + DML allocation 생성
     CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
-
     {
-        CD3DX12_RESOURCE_DESC rd = CD3DX12_RESOURCE_DESC::Buffer(m_InBytesContent, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+        auto rd = CD3DX12_RESOURCE_DESC::Buffer(m_InBytesContent, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
         THROW_IF_FAILED(dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd,
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_InputBufContent)));
         m_InputBufContent->SetName(L"ORT_Input_Content");
         Ort::ThrowOnError(m_DmlApi->CreateGPUAllocationFromD3DResource(m_InputBufContent.Get(), &m_InAllocContent));
     }
     {
-        CD3DX12_RESOURCE_DESC rd = CD3DX12_RESOURCE_DESC::Buffer(m_InBytesStyle, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+        auto rd = CD3DX12_RESOURCE_DESC::Buffer(m_InBytesStyle, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
         THROW_IF_FAILED(dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd,
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_InputBufStyle)));
         m_InputBufStyle->SetName(L"ORT_Input_Style");
         Ort::ThrowOnError(m_DmlApi->CreateGPUAllocationFromD3DResource(m_InputBufStyle.Get(), &m_InAllocStyle));
     }
 
-    // 확정된 입력 shape 저장
+    // 5) 확정된 입력 shape 저장 (이 값으로 전처리/바인딩/디스패치 모두 일치해야 함)
     m_InShapeContent = std::move(inShapeContent);
     m_InShapeStyle = std::move(inShapeStyle);
 
-    //  출력은 만지지 않음: 다음 Run 1회차에서 런타임 shape로 할당
+    // 6) 출력은 다음 Run 1회차에서 런타임 shape로 할당
     m_OutShape.clear();
     if (m_OutAlloc) { m_DmlApi->FreeGPUAllocation(m_OutAlloc); m_OutAlloc = nullptr; }
     m_OutputBuf.Release();
@@ -132,7 +123,12 @@ bool OnnxManager::PrepareIO(ID3D12Device* dev, UINT contentW, UINT contentH, UIN
 bool OnnxManager::Run()
 {
     try {
-        // 입력 바인딩
+        // === (0) 안전 검사: 바이트수와 shape가 일치하는지 (개발 단계 assert 권장)
+        auto bytesOf = [](const std::vector<int64_t>& s) { return size_t(s[0]) * s[1] * s[2] * s[3] * sizeof(float); };
+        if (m_InBytesContent != bytesOf(m_InShapeContent)) return false;
+        if (m_InBytesStyle != bytesOf(m_InShapeStyle))   return false;
+
+        // === (1) 입력 바인딩 (GPU 메모리)
         Ort::Value inContent = Ort::Value::CreateTensor(
             miDml_, m_InAllocContent, m_InBytesContent,
             m_InShapeContent.data(), m_InShapeContent.size(),
@@ -146,42 +142,47 @@ bool OnnxManager::Run()
         io.BindInput(m_InNameContent.c_str(), inContent);
         io.BindInput(m_InNameStyle.c_str(), inStyle);
 
-        // 1) 출력 미지정 → ORT가 알아서 생성 (실제 shape 얻기)
+        // === (2) 첫 실행: 출력 미지정 → ORT가 GPU에 할당 (shape 파악용)
         if (!m_OutAlloc) {
-            io.BindOutput(m_OutName.c_str(), miDml_);
+            io.BindOutput(m_OutName.c_str(), miDml_);  // GPU에 임시 출력
             m_Session->Run(Ort::RunOptions{ nullptr }, io);
 
+            // shape 조회
             auto outs = io.GetOutputValues();
             auto info = outs[0].GetTensorTypeAndShapeInfo();
-            auto shape = info.GetShape();            // e.g. [1,3,1032,1896]
-            AllocateOutputForShape(shape);           // 아래 유틸
+            auto shape = info.GetShape();              // e.g., [1,3,H,W]
+            AllocateOutputForShape(shape);             // 내 출력 리소스/DML alloc 생성
 
+            // 재바인딩 준비
             io.ClearBoundInputs();
             io.ClearBoundOutputs();
 
-            // 다시 입력 바인딩
+            // 입력 다시 바인딩
             io.BindInput(m_InNameContent.c_str(), inContent);
             io.BindInput(m_InNameStyle.c_str(), inStyle);
         }
 
-
-        // 2) 이제 내 출력 버퍼에 직접 기록
+        // === (3) 두 번째 실행: 내 출력 버퍼로 기록
         Ort::Value outTensor = Ort::Value::CreateTensor(
             miDml_, m_OutAlloc, m_OutBytes,
             m_OutShape.data(), m_OutShape.size(),
             ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
-
         io.BindOutput(m_OutName.c_str(), outTensor);
+
         m_Session->Run(Ort::RunOptions{ nullptr }, io);
 
         io.ClearBoundInputs();
         io.ClearBoundOutputs();
+        return true;
     }
     catch (const Ort::Exception& e) {
-        OutputDebugStringA((std::string("ORT Run failed: ") + e.what() + "\n").c_str());
+        // 디바이스 제거 원인 로깅
+        char buf[512];
+        HRESULT reason = m_Dev ? m_Dev->GetDeviceRemovedReason() : S_OK;
+        sprintf_s(buf, "ORT Run failed: %s (GetDeviceRemovedReason=0x%08X)\n", e.what(), (unsigned)reason);
+        OutputDebugStringA(buf);
         return false;
     }
-    return true;
 
 }
 
