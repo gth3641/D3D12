@@ -1,12 +1,12 @@
 // cs_postprocess.hlsl
 StructuredBuffer<float> gOut : register(t0); // CHW, len = SrcW*SrcH*SrcC
-RWTexture2D<unorm float4> gDst : register(u0); // 화면크기 텍스처
+RWTexture2D<unorm float4> gDst : register(u0); // 출력 텍스처 (RGBA8 UNORM)
 
 cbuffer CB : register(b0)
 {
     uint SrcW;
     uint SrcH;
-    uint SrcC;
+    uint SrcC; // 보통 3
     uint _r0;
     uint DstW;
     uint DstH;
@@ -14,7 +14,7 @@ cbuffer CB : register(b0)
     uint _r2;
 }
 
-float sampleCHW_bilinear(uint c, float2 uv)
+float sampleCHW_bilinear(uint c, float2 uv) // uv in [0,1]
 {
     float2 p = uv * float2(SrcW, SrcH) - 0.5;
     int2 p0 = int2(floor(p));
@@ -48,26 +48,13 @@ void main(uint3 dtid : SV_DispatchThreadID)
         return;
 
     float2 uv = (dtid.xy + 0.5) / float2(DstW, DstH);
-    // 필요하면 뒤집기: uv.y = 1.0 - uv.y;
+    // 필요한 경우만 뒤집기:
+    // uv.y = 1.0 - uv.y;
 
     float r = (SrcC > 0) ? sampleCHW_bilinear(0, uv) : 0.0;
     float g = (SrcC > 1) ? sampleCHW_bilinear(1, uv) : r;
     float b = (SrcC > 2) ? sampleCHW_bilinear(2, uv) : r;
 
-    // 간단 범위 보정
-    float mx = max(r, max(g, b)), mn = min(r, min(g, b));
-    if (mx > 2.0)
-    {
-        r *= 1.0 / 255.0;
-        g *= 1.0 / 255.0;
-        b *= 1.0 / 255.0;
-    }
-    else if (mn < -0.1)
-    {
-        r = r * 0.5 + 0.5;
-        g = g * 0.5 + 0.5;
-        b = b * 0.5 + 0.5;
-    }
-
-    gDst[dtid.xy] = float4(saturate(r), saturate(g), saturate(b), 1);
+    // 모델 출력은 대체로 [0..1] 주변 → 과/미노출만 막아주면 충분
+    gDst[dtid.xy] = float4(saturate(r), saturate(g), saturate(b), 1.0);
 }
