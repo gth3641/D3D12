@@ -2,7 +2,7 @@
 
 #include "OnnxRunnerInterface.h"
 
-class OnnxRunner_AdaIN : public OnnxRunnerInterface
+class OnnxRunner_FastNeuralStyle : public OnnxRunnerInterface
 {
 
 public: // Functions

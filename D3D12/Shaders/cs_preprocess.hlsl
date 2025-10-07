@@ -7,6 +7,14 @@ Texture2D<float4> Src : register(t0);
 SamplerState Smp : register(s0);
 RWStructuredBuffer<float> Out : register(u0);
 
+float3 LinearToSRGB(float3 x)
+{
+    x = saturate(x);
+    float3 lo = 12.92 * x;
+    float3 hi = 1.055 * pow(x, 1.0 / 2.4) - 0.055;
+    return lerp(lo, hi, step(0.0031308, x));
+}
+
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
@@ -18,6 +26,12 @@ void main(uint3 id : SV_DispatchThreadID)
     if (Flags & 0x10)
         rgb = rgb.bgr;
 
+    if (Flags & 0x1)
+        rgb = LinearToSRGB(rgb);
+
+    if (Flags & 0x100)
+        rgb *= 255.0;
+    
     uint idx = id.y * W + id.x;
     uint plane = W * H;
 

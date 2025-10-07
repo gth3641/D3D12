@@ -150,9 +150,14 @@
     <ClCompile Include="Object\RenderingObject.cpp" />
     <ClCompile Include="OnnxRunner\OnnxRunnerInterface.cpp" />
     <ClCompile Include="OnnxRunner\OnnxRunner_AdaIN.cpp" />
+    <ClCompile Include="OnnxRunner\OnnxRunner_FastNeuralStyle.cpp" />
     <ClCompile Include="OnnxRunner\OnnxRunner_Udnie.cpp" />
     <ClCompile Include="Support\Image.cpp" />
     <ClCompile Include="Support\ImageLoader.cpp" />
+    <ClCompile Include="Support\Onnx\OnnxService.cpp" />
+    <ClCompile Include="Support\Onnx\OnnxService_AdaIN.cpp" />
+    <ClCompile Include="Support\Onnx\OnnxService_FastNeuralStyle.cpp" />
+    <ClCompile Include="Support\Onnx\OnnxService_Udnie.cpp" />
     <ClCompile Include="Support\Shader.cpp" />
     <ClCompile Include="Support\Window.cpp" />
   </ItemGroup>
@@ -166,14 +171,20 @@
     <ClInclude Include="Object\RenderingObject.h" />
     <ClInclude Include="OnnxRunner\OnnxRunnerInterface.h" />
     <ClInclude Include="OnnxRunner\OnnxRunner_AdaIN.h" />
+    <ClInclude Include="OnnxRunner\OnnxRunner_FastNeuralStyle.h" />
     <ClInclude Include="OnnxRunner\OnnxRunner_Udnie.h" />
     <ClInclude Include="Support\ComPointer.h" />
     <ClInclude Include="Support\Image.h" />
     <ClInclude Include="Support\ImageLoader.h" />
+    <ClInclude Include="Support\Onnx\OnnxService.h" />
+    <ClInclude Include="Support\Onnx\OnnxService_AdaIN.h" />
+    <ClInclude Include="Support\Onnx\OnnxService_FastNeuralStyle.h" />
+    <ClInclude Include="Support\Onnx\OnnxService_Udnie.h" />
     <ClInclude Include="Support\Shader.h" />
     <ClInclude Include="Support\Window.h" />
     <ClInclude Include="Support\WinInclude.h" />
     <ClInclude Include="Util\LoggingProvider.h" />
+    <ClInclude Include="Util\OnnxDefine.h" />
     <ClInclude Include="Util\Util.h" />
   </ItemGroup>
   <ItemGroup>
