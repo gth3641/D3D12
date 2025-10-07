@@ -4,37 +4,19 @@
 #include "Support/ComPointer.h"
 #include "Support/ImageLoader.h"
 #include "Util/Util.h"
+#include "Util/OnnxDefine.h"
 
 #include "Object/RenderingObject.h"
 
 #include "d3dx12.h"
 #include "d3d12.h"
 #include <d3dcompiler.h>
-
 #include <onnxruntime_cxx_api.h>
+#include <memory>
 
 #define DX_MANAGER DirectXManager::Get()
 
 class Shader;
-
-struct OnnxPassResources {
-    // 1) 오프스크린 씬 텍스처 (RTV+SRV)
-    ComPointer<ID3D12Resource> SceneTex;
-    D3D12_CPU_DESCRIPTOR_HANDLE SceneRTV{};
-    D3D12_CPU_DESCRIPTOR_HANDLE OnnxResultRTV{}; // 옵션(후처리용)
-    D3D12_GPU_DESCRIPTOR_HANDLE SceneSRV{};      // 전처리 입력
-
-    // 2) 결과 뿌릴 텍스처 (UAV+SRV)
-    ComPointer<ID3D12Resource> OnnxTex; // 최종 화면용 RGBA8
-    D3D12_GPU_DESCRIPTOR_HANDLE OnnxTexUAV{};
-    D3D12_GPU_DESCRIPTOR_HANDLE OnnxTexSRV{};
-
-    // 3) 전처리/후처리용 PSO/RootSig
-    ComPointer<ID3D12RootSignature> PreRS;// , PostRS;
-    ComPointer<ID3D12PipelineState> PrePSO, PostPSO;
-
-    UINT Width = 0, Height = 0;
-};
 
 class DirectXManager
 {
@@ -103,11 +85,11 @@ public: // Functions
     void RecordPreprocess(ID3D12GraphicsCommandList7* cmd);
     void RecordPostprocess(ID3D12GraphicsCommandList7* cmd);
 
+    bool CreateOnnxComputePipeline();
 private: // Functions
     void InitUploadRenderingObject();
     void InitShader();
 
-    bool CreateOnnxComputePipeline();
 
     void SetVerticies();
     void SetVertexLayout();
@@ -124,11 +106,17 @@ private: // Functions
     bool CreateSimpleBlitPipeline();
     void CreateFullscreenQuadVB(UINT w, UINT h);
 
+	//void RecordPreprocess_Udnie(ID3D12GraphicsCommandList7* cmd);
+	//void RecordPostprocess_Udnie(ID3D12GraphicsCommandList7* cmd);
+    //void CreateOnnxResources_Udnie(UINT W, UINT H);
+
 private: // Variables
 
     D3D12_INPUT_ELEMENT_DESC m_VertexLayout[2];
     RenderingObject RenderingObject1;
     RenderingObject RenderingObject2;
+    RenderingObject m_StyleObject;
+
 
     ComPointer<ID3D12RootSignature> m_RootSignature;
     ComPointer<ID3D12PipelineState> m_PipelineStateObj;
@@ -136,7 +124,9 @@ private: // Variables
 
     ComPointer<ID3D12DescriptorHeap> m_BlitSrvHeap;
 
-    OnnxPassResources onnx_;
+    std::unique_ptr<OnnxPassResources> m_Onnx = nullptr;
+    std::unique_ptr<OnnxGPUResources> m_OnnxGPU = nullptr;
+
     
     // 오프스크린 타깃 & SRV/RTV
     ComPointer<ID3D12Resource2> mSceneColor; // R16G16B16A16_FLOAT
@@ -167,46 +157,7 @@ private: // Variables
     D3D12_RESOURCE_STATES mOnnxInputState = D3D12_RESOURCE_STATE_COMMON;
 
 private:
-    struct {
-        // 디스크립터 힙
-        ComPointer<ID3D12DescriptorHeap> Heap;
-
-        // Scene SRV
-        D3D12_CPU_DESCRIPTOR_HANDLE SceneSRV_CPU{};
-        D3D12_GPU_DESCRIPTOR_HANDLE SceneSRV_GPU{};
-
-        // Input (content/style) UAV
-        D3D12_CPU_DESCRIPTOR_HANDLE InputContentUAV_CPU{};
-        D3D12_GPU_DESCRIPTOR_HANDLE InputContentUAV_GPU{};
-        D3D12_CPU_DESCRIPTOR_HANDLE InputStyleUAV_CPU{};
-        D3D12_GPU_DESCRIPTOR_HANDLE InputStyleUAV_GPU{};
-
-        D3D12_CPU_DESCRIPTOR_HANDLE InputContentSRV_CPU{};
-        D3D12_GPU_DESCRIPTOR_HANDLE InputContentSRV_GPU{};
-        D3D12_CPU_DESCRIPTOR_HANDLE InputStyleSRV_CPU{};
-        D3D12_GPU_DESCRIPTOR_HANDLE InputStyleSRV_GPU{};
-
-        // ModelOut SRV  ★★ 새로 필요 ★★
-        D3D12_CPU_DESCRIPTOR_HANDLE ModelOutSRV_CPU{};
-        D3D12_GPU_DESCRIPTOR_HANDLE ModelOutSRV_GPU{};
-
-        // 
-        D3D12_CPU_DESCRIPTOR_HANDLE StyleSRV_CPU{};
-        D3D12_GPU_DESCRIPTOR_HANDLE StyleSRV_GPU{};
-
-        // OnnxTex UAV/SRV
-        ComPointer<ID3D12Resource> OnnxTex;
-        D3D12_CPU_DESCRIPTOR_HANDLE OnnxTexUAV_CPU{};
-        D3D12_GPU_DESCRIPTOR_HANDLE OnnxTexUAV_GPU{};
-        D3D12_CPU_DESCRIPTOR_HANDLE OnnxTexSRV_CPU{};
-        D3D12_GPU_DESCRIPTOR_HANDLE OnnxTexSRV_GPU{};
-
-        D3D12_GPU_DESCRIPTOR_HANDLE InputStyleUAV_GPU_ForClear{};
-        D3D12_CPU_DESCRIPTOR_HANDLE InputStyleUAV_CPU_ForClear{};;
-
-        // CB
-        ComPointer<ID3D12Resource> CB;
-    } mOnnxGPU;
+    
 
 
 #pragma region 테스트
@@ -227,23 +178,15 @@ public:
     void WriteSceneSRVToSlot0();
     void WriteStyleSRVToSlot6(ID3D12Resource* styleTex, DXGI_FORMAT fmt);
 
-private:
-    RenderingObject m_StyleObject;
-
-public:
     void Debug_ShowPreprocessedToScreen(ID3D12GraphicsCommandList7* cmd, bool showContent);
     void Debug_CopyStyleToScreen(ID3D12GraphicsCommandList7* cmd);
     void Debug_DumpOrtOutput(ID3D12GraphicsCommandList7* cmd);
     void Debug_DumpBuffer(ID3D12Resource* src, const char* tag);
 
-    
+private:
     ComPointer<ID3D12PipelineState> m_DebugShowInputPSO;
     ComPointer<ID3D12PipelineState> m_CopyTexToTex2DPSO;
     ComPointer<ID3D12PipelineState> m_FillPSO;
     ComPointer<ID3D12DescriptorHeap> mHeapCPU;
-
-
-    std::vector<ComPointer<ID3D12Resource>> mKeepAliveUploads;
-    void EndFrameUploads() { mKeepAliveUploads.clear(); }
 };
 

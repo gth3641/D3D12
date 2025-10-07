@@ -138,7 +138,7 @@ bool OnnxRunner_Udnie::Run()
 
         Ort::IoBinding io(*m_Session);
         io.BindInput(m_InNameContent.c_str(), inContent);
-        io.BindInput(m_InNameStyle.c_str(), inStyle);
+        //io.BindInput(m_InNameStyle.c_str(), inStyle);
 
         // === (2) 첫 실행: 출력 미지정 → ORT가 GPU에 할당 (shape 파악용)
         if (!m_OutAlloc) {
@@ -157,7 +157,7 @@ bool OnnxRunner_Udnie::Run()
 
             // 입력 다시 바인딩
             io.BindInput(m_InNameContent.c_str(), inContent);
-            io.BindInput(m_InNameStyle.c_str(), inStyle);
+            //io.BindInput(m_InNameStyle.c_str(), inStyle);
         }
 
         // === (3) 두 번째 실행: 내 출력 버퍼로 기록

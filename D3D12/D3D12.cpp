@@ -23,8 +23,31 @@ int main()
 {
     if (DX_CONTEXT.Init() && DX_WINDOW.Init())
     {
-        //DX_ONNX.Init(L"./Resources/Onnx/udnie-9.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue());
-		DX_ONNX.Init(L"./Resources/Onnx/adain_end2end.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue());
+		//if (DX_ONNX.Init(L"./Resources/Onnx/udnie-9.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
+		//{
+		//	return -1;
+		//}
+		//if (DX_ONNX.Init(L"./Resources/Onnx/adain_end2end.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
+		//{
+		//	return -1;
+		//}
+
+		//if (DX_ONNX.Init(L"./Resources/Onnx/FHD/rain_princess_opset12_dyn.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
+		//{
+		//	return -1;
+		//}
+
+		//if (DX_ONNX.Init(L"./Resources/Onnx/FHD/candy_opset12_dyn.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
+		//{
+		//	return -1;
+		//}
+
+		if (DX_ONNX.Init(L"./Resources/Onnx/FHD/udnie_opset12_dyn.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
+		{
+			return -1;
+		}
+
+
 
 
         DX_IMAGE.Init();
@@ -38,10 +61,7 @@ int main()
 				ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
 				DX_MANAGER.RenderOffscreen(cmd);
 				DX_MANAGER.RecordPreprocess(cmd);          
-
 				DX_CONTEXT.ExecuteCommandList();        
-				DX_CONTEXT.SignalAndWait();             
-				DX_MANAGER.EndFrameUploads();
 #if DEBUG_DUMP
 				DX_MANAGER.Debug_DumpBuffer(DX_ONNX.GetInputBufferContent().Get(), "CONTENT");
 				DX_MANAGER.Debug_DumpBuffer(DX_ONNX.GetInputBufferStyle().Get(), "STYLE");
@@ -58,7 +78,6 @@ int main()
 				DX_MANAGER.RecordPostprocess(cmd);
 				DX_MANAGER.BlitToBackbuffer(cmd);
 				DX_CONTEXT.ExecuteCommandList();
-				DX_MANAGER.EndFrameUploads();
 				DX_WINDOW.Present();
 			}
 
@@ -94,20 +113,8 @@ int main()
 
 		// Copy CPU Resource --> GPU Resource
 		ID3D12GraphicsCommandList7* cmdList = DX_CONTEXT.InitCommandList();
-
-		if (DX_ONNX.Init(L"./Resources/Onnx/udnie-9.onnx",DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
-		{
-			return -1;
-		}
-
 		DX_MANAGER.UploadGPUResource(cmdList);
-		//bool asdf = DX_ONNX.RunGpuSmokeTest(DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue());
-
 		// === Vertex buffer view ===
-
-		//DX_WINDOW.SetFullScreen(false);
-		DX_MANAGER.CreateOnnxResources(DX_WINDOW.GetWidth(), DX_WINDOW.GetHeight());
-
 		while (DX_WINDOW.ShouldClose() == false)
 		{
 			//Process pending window message

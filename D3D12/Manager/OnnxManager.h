@@ -4,6 +4,7 @@
 #include "Support/ComPointer.h"
 #include "Util/Util.h"
 #include "OnnxRunner/OnnxRunnerInterface.h"
+#include "Util/OnnxDefine.h"
 
 #include <string>
 #include <vector>
@@ -14,6 +15,7 @@
 #include <memory>
 
 #define DX_ONNX OnnxManager::Get()
+
 
 
 class OnnxManager
@@ -34,40 +36,34 @@ public:
 public: // Static & Override
   
 public: // Functions
-    // ONNX Runtime + DirectML EP 초기화
     bool Init(const std::wstring& modelPath, ID3D12Device* dev, ID3D12CommandQueue* queue);
-
-    // 가변 해상도 준비(권장): content/style을 각각 지정
     bool PrepareIO(ID3D12Device* dev, UINT contentW, UINT contentH, UINT styleW, UINT styleH);
-
-    // 호환 오버로드: style = content
     bool PrepareIO(ID3D12Device* dev, UINT W, UINT H) { return PrepareIO(dev, W, H, W, H); }
-
-    // 실행(현재 바인딩된 GPU 버퍼를 사용)
     bool Run();
-
-    // 리사이즈(권장)
     void ResizeIO(ID3D12Device* dev, UINT contentW, UINT contentH, UINT styleW, UINT styleH);
-
-    // 호환 오버로드: style = content
     void ResizeIO(ID3D12Device* dev, UINT W, UINT H) { ResizeIO(dev, W, H, W, H); }
-
-    // 종료
     void Shutdown();
 
     //===========Getter=================//
     // 새 게터(명시적): content/style 입력 버퍼와 shape
-    ComPointer<ID3D12Resource> GetOutputBuffer()       const { return OnnxRunner->GetOutputBuffer(); }
-    ComPointer<ID3D12Resource> GetInputBufferContent() const { return OnnxRunner->GetInputBufferContent(); }
-    ComPointer<ID3D12Resource> GetInputBufferStyle()   const { return OnnxRunner->GetInputBufferStyle(); }
-    const std::vector<int64_t>& GetOutputShape()       const { return OnnxRunner->GetOutputShape(); }
-    const std::vector<int64_t>& GetInputShapeContent() const { return OnnxRunner->GetInputShapeContent(); }
-    const std::vector<int64_t>& GetInputShapeStyle()   const { return OnnxRunner->GetInputShapeStyle(); }
+    ComPointer<ID3D12Resource> GetOutputBuffer()        const { return m_OnnxRunner->GetOutputBuffer(); }
+    ComPointer<ID3D12Resource> GetInputBufferContent()  const { return m_OnnxRunner->GetInputBufferContent(); }
+    ComPointer<ID3D12Resource> GetInputBufferStyle()    const { return m_OnnxRunner->GetInputBufferStyle(); }
+    const std::vector<int64_t>& GetOutputShape()        const { return m_OnnxRunner->GetOutputShape(); }
+    const std::vector<int64_t>& GetInputShapeContent()  const { return m_OnnxRunner->GetInputShapeContent(); }
+    const std::vector<int64_t>& GetInputShapeStyle()    const { return m_OnnxRunner->GetInputShapeStyle(); }
+	bool IsInitialized()                                const { return m_Initialized; }
+	OnnxType GetOnnxType()                              const { return m_OnnxType; }
     //==================================//
 
 
 private:
-    std::unique_ptr<OnnxRunnerInterface> OnnxRunner = nullptr;
+	void InitOnnxRunner(const std::wstring& modelPath, ID3D12Device* dev, ID3D12CommandQueue* queue);
 
+private:
+    std::unique_ptr<OnnxRunnerInterface> m_OnnxRunner = nullptr;
+
+	bool m_Initialized = false;
+	OnnxType m_OnnxType = OnnxType::None;
 };
 
