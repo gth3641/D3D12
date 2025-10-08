@@ -1,14 +1,8 @@
 #include "OnnxManager.h"
-#include "DirectXManager.h"
-#include "D3D/DXContext.h"
 
-#include "d3dx12.h"
-#include "d3d12.h"
 #include "OnnxRunner/OnnxRunner_AdaIN.h"
 #include "OnnxRunner/OnnxRunner_Udnie.h"
 #include "OnnxRunner/OnnxRunner_FastNeuralStyle.h"
-
-
 
 bool OnnxManager::Init(const std::wstring& modelPath, ID3D12Device* dev, ID3D12CommandQueue* queue)
 {
@@ -71,7 +65,6 @@ void OnnxManager::InitOnnxRunner(const std::wstring& modelPath, ID3D12Device* de
         m_OnnxRunner = std::make_unique<OnnxRunner_FastNeuralStyle>();
         m_OnnxType = OnnxType::FastNeuralStyle;
     }
-   
     else if (modelPath.find(L"adain") != std::wstring::npos)
     {
         m_OnnxRunner = std::make_unique<OnnxRunner_AdaIN>();

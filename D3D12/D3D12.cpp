@@ -37,17 +37,15 @@ int main()
 		//	return -1;
 		//}
 
-		//if (DX_ONNX.Init(L"./Resources/Onnx/FHD/candy_opset12_dyn.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
-		//{
-		//	return -1;
-		//}
-
-		if (DX_ONNX.Init(L"./Resources/Onnx/FHD/udnie_opset12_dyn.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
+		if (DX_ONNX.Init(L"./Resources/Onnx/FHD/mosaic_opset12_dyn.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
 		{
 			return -1;
 		}
 
-
+		//if (DX_ONNX.Init(L"./Resources/Onnx/FHD/udnie_opset12_dyn.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
+		//{
+		//	return -1;
+		//}
 
 
         DX_IMAGE.Init();

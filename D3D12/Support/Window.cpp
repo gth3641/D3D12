@@ -122,15 +122,23 @@ bool DXWindow::Init()
 
 void DXWindow::Update()
 {
-	MessageUpdate();
+	if (DX_WINDOW.ShouldResize())
+	{
+		DX_CONTEXT.Flush(DXWindow::GetFrameCount());
 
+		DX_WINDOW.Resize();
+		DX_MANAGER.Resize();
+
+		DX_CONTEXT.Flush(DXWindow::GetFrameCount());
+	}
+
+	MessageUpdate();
 	LogicUpdate();
 }
 
 void DXWindow::Present()
 {
-	m_currentBufferIndex = m_swapChain->GetCurrentBackBufferIndex();
-	m_swapChain->Present(1, 0);//DXGI_PRESENT_DO_NOT_WAIT
+	m_swapChain->Present(1, 0);
 	m_currentBufferIndex = m_swapChain->GetCurrentBackBufferIndex();
 }
 
@@ -252,8 +260,8 @@ D3D12_VIEWPORT DXWindow::CreateViewport()
 	vp.TopLeftX = vp.TopLeftY = 0.f;
 	vp.Width = (FLOAT)GetWidth();
 	vp.Height = (FLOAT)GetHeight();
-	vp.MinDepth = 1.f;
-	vp.MaxDepth = 0.f;
+	vp.MinDepth = 0.f;
+	vp.MaxDepth = 1.f;
 
 	return vp;
 }
@@ -305,16 +313,6 @@ void DXWindow::MessageUpdate()
 
 void DXWindow::LogicUpdate()
 {
-	// Handle resizing
-	if (DX_WINDOW.ShouldResize())
-	{
-		DX_CONTEXT.Flush(DXWindow::GetFrameCount());
-		DX_WINDOW.Resize();
-
-		DX_MANAGER.Resize();
-		DX_MANAGER.ResizeOnnxResources(m_width, m_height);
-	}
-
 	DX_MANAGER.Update();
 }
 
@@ -335,6 +333,8 @@ bool DXWindow::GetBuffers()
 
 		DX_CONTEXT.GetDevice()->CreateRenderTargetView(m_buffers[i], &rtv, m_rtvHandles[i]);
 	}
+
+	UpdateBackBuffer();
 
 	return true;
 }

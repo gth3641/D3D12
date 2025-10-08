@@ -28,41 +28,61 @@ void RenderingObject::UploadGPUResource(ID3D12GraphicsCommandList7* cmdList)
 {
 	if (!cmdList || !m_Image) return;
 
-	// (A) VB 복사
-	if (m_VBSize > 0) {
+	// ===== (A) Vertex Buffer =====
+	if (m_VBSize > 0 && mVbDirty) {
+		if (mVBState != D3D12_RESOURCE_STATE_COPY_DEST) {
+			auto toCopy = CD3DX12_RESOURCE_BARRIER::Transition(
+				m_VertexBuffer.Get(), mVBState, D3D12_RESOURCE_STATE_COPY_DEST);
+			cmdList->ResourceBarrier(1, &toCopy);
+		}
+
 		cmdList->CopyBufferRegion(
 			m_VertexBuffer, 0,
 			m_UploadBuffer, m_GeomOffsetInUpload,
 			m_VBSize);
 
-		// ★ VB 상태: COPY_DEST -> VERTEX_AND_CONSTANT_BUFFER
 		auto toVB = CD3DX12_RESOURCE_BARRIER::Transition(
 			m_VertexBuffer.Get(),
 			D3D12_RESOURCE_STATE_COPY_DEST,
 			D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 		cmdList->ResourceBarrier(1, &toVB);
+		mVBState = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+		SetVbDirty(false);
 	}
 
-	// (B) 텍스처 복사 (업로드 Footprint → 2D텍스처)
-	D3D12_TEXTURE_COPY_LOCATION src{};
-	src.pResource = m_UploadBuffer;
-	src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-	src.PlacedFootprint = m_TexFootprint;
+	// ===== (B) Texture =====
+	if (mTexDirty) {
+		ID3D12Resource* tex = m_Image->GetTexture();
 
-	D3D12_TEXTURE_COPY_LOCATION dst{};
-	dst.pResource = m_Image->GetTexture();
-	dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-	dst.SubresourceIndex = 0;
+		// 필요하면 COPY_DEST로 다운전이
+		if (mTexState != D3D12_RESOURCE_STATE_COPY_DEST) {
+			auto toCopy = CD3DX12_RESOURCE_BARRIER::Transition(
+				tex, mTexState, D3D12_RESOURCE_STATE_COPY_DEST);
+			cmdList->ResourceBarrier(1, &toCopy);
+		}
 
-	cmdList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+		D3D12_TEXTURE_COPY_LOCATION src{};
+		src.pResource = m_UploadBuffer;
+		src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+		src.PlacedFootprint = m_TexFootprint;
 
-	// ★ 텍스처 상태: COPY_DEST -> PIXEL_SHADER_RESOURCE
-	//   (RenderOffscreen에서 픽셀 셰이더가 바로 읽을 수 있게)
-	auto toSRV = CD3DX12_RESOURCE_BARRIER::Transition(
-		m_Image->GetTexture(),
-		D3D12_RESOURCE_STATE_COPY_DEST,
-		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-	cmdList->ResourceBarrier(1, &toSRV);
+		D3D12_TEXTURE_COPY_LOCATION dst{};
+		dst.pResource = tex;
+		dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+		dst.SubresourceIndex = 0;
+
+		cmdList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+
+		auto toSRV = CD3DX12_RESOURCE_BARRIER::Transition(
+			tex,
+			D3D12_RESOURCE_STATE_COPY_DEST,
+			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+		cmdList->ResourceBarrier(1, &toSRV);
+
+		mTexState = (D3D12_RESOURCE_STATES)
+			(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+		SetTexDirty(false);
+	}
 }
 
 Triangle* RenderingObject::GetTriagleByIndex(size_t index)
@@ -96,6 +116,7 @@ void RenderingObject::AddTriangle(const Vertex* vertex, size_t size)
 
 	m_Triangle.push_back(triangle);
 }
+
 
 void RenderingObject::AddTexture(const std::filesystem::path& imagePath)
 {
@@ -182,37 +203,61 @@ void RenderingObject::CreateSRV()
 
 }
 
-void RenderingObject::UploadCPUResource()
+void RenderingObject::UpateTexture(BYTE* dst)
 {
-	if (m_Image == nullptr || m_UploadBuffer == nullptr) return;
-
 	const auto& td = m_Image->GetTextureData();
 	const BYTE* src = reinterpret_cast<const BYTE*>(td.data.data());
-
-	BYTE* dst = nullptr;
-	// ★ 쓰기만 할 거면 read range = nullptr
-	if (FAILED(m_UploadBuffer->Map(0, nullptr, reinterpret_cast<void**>(&dst))) || !dst)
-		return;
 
 	// 1) 텍스처 데이터: 행 단위로 복사 (dst는 RowPitch가 256 정렬)
 	BYTE* texDstBase = dst + m_TexFootprint.Offset;     // 보통 0
 	const UINT dstRowPitch = m_TexFootprint.Footprint.RowPitch;
 	const UINT srcRowBytes = static_cast<UINT>(m_TexRowSizeInBytes);
 
-	for (UINT r = 0; r < m_TexNumRows; ++r) {
+	for (UINT r = 0; r < m_TexNumRows; ++r)
+	{
 		std::memcpy(texDstBase + r * dstRowPitch, src + r * srcRowBytes, srcRowBytes);
 		// 남는 패딩은 냅둬도 OK
 	}
 
+	SetTexDirty(true);
+}
+
+void RenderingObject::UpdateVertexBuffer(BYTE* dst)
+{
 	// 2) 업로드 버퍼의 VB 영역에 정점 데이터 연속 복사
 	size_t cur = 0;
-	for (size_t i = 0, n = GetTriangleIndex(); i < n; ++i) {
+	for (size_t i = 0, n = GetTriangleIndex(); i < n; ++i)
+	{
 		Triangle* tri = GetTriagleByIndex(i);
 		const size_t sz = tri->GetVerticiesSize();
 		std::memcpy(dst + m_GeomOffsetInUpload + cur, tri->m_Verticies, sz);
 		cur += sz;
 	}
 
+	SetVbDirty(true);
+}
+
+void RenderingObject::UploadCPUResource(bool textureUpdate, bool vertexUpdate)
+{
+	if (m_Image == nullptr || m_UploadBuffer == nullptr) return;
+
+	BYTE* dst = nullptr;
+	// ★ 쓰기만 할 거면 read range = nullptr
+	if (FAILED(m_UploadBuffer->Map(0, nullptr, reinterpret_cast<void**>(&dst))) || !dst)
+		return;
+
+	if (textureUpdate == true)
+	{
+		UpateTexture(dst);
+	}
+
+	if (vertexUpdate == true)
+	{
+		UpdateVertexBuffer(dst);
+	}
+
 	// ★ write-only라면 Unmap range = nullptr
 	m_UploadBuffer->Unmap(0, nullptr);
+
+	
 }

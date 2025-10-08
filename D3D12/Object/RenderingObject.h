@@ -28,12 +28,19 @@ public: // Functions
 	int GetVertexCount();
 	void AddTriangle(const Vertex* vertex, size_t size);
 	std::vector<Triangle>& GetTriangle() { return m_Triangle; }
-	void UploadCPUResource();
+	void UploadCPUResource(bool textureUpdate = true, bool vertexUpdate = true);
+
+
+	void SetVbDirty(bool dirty) { mVbDirty = dirty; }
+	void SetTexDirty(bool dirty) { mTexDirty = dirty; }
 
 private: // Functions
 	void AddTexture(const std::filesystem::path& imagePath);
 	void UploadTextureBuffer();
 	void CreateSRV();
+
+	void UpateTexture(BYTE* dst);
+	void UpdateVertexBuffer(BYTE* dst);
 
 private: // Variables
 	std::vector<Triangle> m_Triangle;
@@ -51,6 +58,14 @@ private: // Variables
 	UINT64 m_TexUploadSize = 0;      // 전체 텍스처 업로드 크기(패딩 포함)
 	UINT64 m_GeomOffsetInUpload = 0; // 업로드 버퍼 내에서 VB가 시작되는 오프셋
 	UINT64 m_VBSize = 0;             // 전체 버텍스 데이터 바이트 수
+
+	// 상태 추적
+	D3D12_RESOURCE_STATES mVBState = D3D12_RESOURCE_STATE_COPY_DEST;
+	D3D12_RESOURCE_STATES mTexState = D3D12_RESOURCE_STATE_COPY_DEST;
+
+	// 더티 플래그(업로드가 필요할 때만 true)
+	bool mVbDirty = true;
+	bool mTexDirty = true;
 
 };
 

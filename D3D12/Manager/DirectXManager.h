@@ -12,11 +12,16 @@
 #include "d3d12.h"
 #include <d3dcompiler.h>
 #include <onnxruntime_cxx_api.h>
+#include <DirectXMath.h>
 #include <memory>
 
 #define DX_MANAGER DirectXManager::Get()
 
 class Shader;
+
+using namespace DirectX;
+
+struct Vtx { XMFLOAT3 pos; XMFLOAT3 col; };
 
 class DirectXManager
 {
@@ -61,7 +66,22 @@ public: // Functions
     bool Init();
     void Shutdown();
     void Update();
+    void RenderCube(ID3D12GraphicsCommandList7* cmd); 
+    void RenderImage(ID3D12GraphicsCommandList7* cmd); 
+    void Resize();
+
+    void RenderOffscreen(ID3D12GraphicsCommandList7* cmd);
+    void BlitToBackbuffer(ID3D12GraphicsCommandList7* cmd);
+
     void UploadGPUResource(ID3D12GraphicsCommandList7* cmdList);
+    void CreateOnnxResources(UINT W, UINT H);
+    void ResizeOnnxResources(UINT W, UINT H);
+
+    void InitBlitPipeline();
+    void RecordPreprocess(ID3D12GraphicsCommandList7* cmd);
+    void RecordPostprocess(ID3D12GraphicsCommandList7* cmd);
+
+    bool CreateOnnxComputePipeline();
 
     //===========Getter=================//
     D3D12_INPUT_ELEMENT_DESC* GetVertexLayout() { return m_VertexLayout; }
@@ -73,19 +93,6 @@ public: // Functions
     ComPointer<ID3D12RootSignature>& GetRootSignature() { return m_RootSignature; }
     ComPointer<ID3D12PipelineState>& GetPipelineStateObj() { return m_PipelineStateObj; }
     //==================================//
-
-    void CreateOnnxResources(UINT W, UINT H);
-    void ResizeOnnxResources(UINT W, UINT H);
-
-    void Resize();
-    void RenderOffscreen(ID3D12GraphicsCommandList7* cmd);
-    void BlitToBackbuffer(ID3D12GraphicsCommandList7* cmd);
-
-    void InitBlitPipeline();
-    void RecordPreprocess(ID3D12GraphicsCommandList7* cmd);
-    void RecordPostprocess(ID3D12GraphicsCommandList7* cmd);
-
-    bool CreateOnnxComputePipeline();
 private: // Functions
     void InitUploadRenderingObject();
     void InitShader();
@@ -96,7 +103,7 @@ private: // Functions
 
     void UploadTextureBuffer();
     void CreateSRV();
-    void UploadCPUResource();
+    //void UploadCPUResource();
 
     void InitPipelineSate(Shader& vertexShader, Shader& pixelShader);
 
@@ -106,59 +113,49 @@ private: // Functions
     bool CreateSimpleBlitPipeline();
     void CreateFullscreenQuadVB(UINT w, UINT h);
 
-	//void RecordPreprocess_Udnie(ID3D12GraphicsCommandList7* cmd);
-	//void RecordPostprocess_Udnie(ID3D12GraphicsCommandList7* cmd);
-    //void CreateOnnxResources_Udnie(UINT W, UINT H);
-
 private: // Variables
 
     D3D12_INPUT_ELEMENT_DESC m_VertexLayout[2];
+
     RenderingObject RenderingObject1;
     RenderingObject RenderingObject2;
     RenderingObject m_StyleObject;
 
 
     ComPointer<ID3D12RootSignature> m_RootSignature;
+    ComPointer<ID3D12RootSignature> m_BlitRS2;
     ComPointer<ID3D12PipelineState> m_PipelineStateObj;
     ComPointer<ID3D12PipelineState> m_PsoBlitBackbuffer;
+    ComPointer<ID3D12PipelineState> m_BlitPSO2;
 
-    ComPointer<ID3D12DescriptorHeap> m_BlitSrvHeap;
 
     std::unique_ptr<OnnxPassResources> m_Onnx = nullptr;
     std::unique_ptr<OnnxGPUResources> m_OnnxGPU = nullptr;
 
-    
+    ComPointer<ID3D12DescriptorHeap> m_BlitSrvHeap;
+    ComPointer<ID3D12DescriptorHeap> mHeapCPU;
+    ComPointer<ID3D12DescriptorHeap> mOffscreenRtvHeap;
+
     // 오프스크린 타깃 & SRV/RTV
+    uint32_t m_Width = 0, m_Height = 0;
+
+    ComPointer<ID3D12Resource2> mFSQuadVB;
     ComPointer<ID3D12Resource2> mSceneColor; // R16G16B16A16_FLOAT
+
     D3D12_CPU_DESCRIPTOR_HANDLE mRtvScene{};
     D3D12_CPU_DESCRIPTOR_HANDLE mRtvBackbuffer{};
     D3D12_CPU_DESCRIPTOR_HANDLE mSrvScene{};
-    
     D3D12_CPU_DESCRIPTOR_HANDLE mResolvedSrvCPU;
     D3D12_GPU_DESCRIPTOR_HANDLE mResolvedSrvGPU;
 
-    // Readback/Upload 버퍼 (CPU I/O)
-    ComPointer<ID3D12Resource2> mFSQuadVB;
-    uint32_t m_Width = 0, m_Height = 0;
-    
-    ComPointer<ID3D12DescriptorHeap> mOffscreenRtvHeap;
-
     // 리소스 상태 추적
-    D3D12_RESOURCE_STATES mSceneColorState = D3D12_RESOURCE_STATE_COMMON;
-
-    ComPointer<ID3D12RootSignature> m_BlitRS2;
-    ComPointer<ID3D12PipelineState> m_BlitPSO2;
-
     D3D12_VERTEX_BUFFER_VIEW vbv1;
     D3D12_VERTEX_BUFFER_VIEW vbv2;
     D3D12_VERTEX_BUFFER_VIEW mFSQuadVBV;
 
+    D3D12_RESOURCE_STATES mSceneColorState = D3D12_RESOURCE_STATE_COMMON;
     D3D12_RESOURCE_STATES mOnnxTexState = D3D12_RESOURCE_STATE_COMMON;
     D3D12_RESOURCE_STATES mOnnxInputState = D3D12_RESOURCE_STATE_COMMON;
-
-private:
-    
-
 
 #pragma region 테스트
 public:
@@ -173,20 +170,43 @@ private: // Variables
 
 #pragma endregion
 
-
 public:
-    void WriteSceneSRVToSlot0();
-    void WriteStyleSRVToSlot6(ID3D12Resource* styleTex, DXGI_FORMAT fmt);
-
-    void Debug_ShowPreprocessedToScreen(ID3D12GraphicsCommandList7* cmd, bool showContent);
-    void Debug_CopyStyleToScreen(ID3D12GraphicsCommandList7* cmd);
     void Debug_DumpOrtOutput(ID3D12GraphicsCommandList7* cmd);
     void Debug_DumpBuffer(ID3D12Resource* src, const char* tag);
 
-private:
-    ComPointer<ID3D12PipelineState> m_DebugShowInputPSO;
-    ComPointer<ID3D12PipelineState> m_CopyTexToTex2DPSO;
-    ComPointer<ID3D12PipelineState> m_FillPSO;
-    ComPointer<ID3D12DescriptorHeap> mHeapCPU;
+//private:
+//    ComPointer<ID3D12PipelineState> m_DebugShowInputPSO;
+//    ComPointer<ID3D12PipelineState> m_CopyTexToTex2DPSO;
+//    ComPointer<ID3D12PipelineState> m_FillPSO;
+
+
+// Render Cube
+private:// Functions
+    bool InitCubePipeline();     // RS/PSO/셰이더
+    bool InitCubeGeometry();     // VB/IB
+    bool InitDepth(UINT w, UINT h);
+    void DestroyDepth();
+
+private: // Variables
+    // PSO / RootSig
+    ComPointer<ID3D12PipelineState>     mCubePSO;
+    ComPointer<ID3D12RootSignature>     mCubeRootSig;
+
+    // 버퍼들
+    ComPointer<ID3D12Resource2>         mVB;
+    ComPointer<ID3D12Resource2>         mIB;
+    D3D12_VERTEX_BUFFER_VIEW            mVBV{};
+    D3D12_INDEX_BUFFER_VIEW             mIBV{};
+    UINT                                mIndexCount = 0;
+
+    // 깊이버퍼 + DSV 힙
+    ComPointer<ID3D12DescriptorHeap>    mDsvHeap;
+    ComPointer<ID3D12Resource2>         mDepth;
+    D3D12_CPU_DESCRIPTOR_HANDLE         mDSV{};
+
+    // 뷰/프로젝션
+    float mAngle = 0.f;
+    float mAspect = 16.f / 9.f;
+
 };
 
