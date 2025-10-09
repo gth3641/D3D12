@@ -9,84 +9,132 @@
 #include "Manager/DirectXManager.h"
 #include "Manager/ImageManager.h"
 #include "Manager/OnnxManager.h"
+#include "Manager/InputManager.h"
 
 #include "DebugD3D12/DebugLayer.h"
+#include "Util/Util.h"
 
 #include "D3D/DXContext.h"
-#include "Util/Util.h"
+
+#include <chrono>
+#include <cmath>
 
 #define USE_ONNX
 #define DEBUG_DUMP 0
 
 #ifdef USE_ONNX
+
 int main()
 {
-    if (DX_CONTEXT.Init() && DX_WINDOW.Init())
+	if (DX_INPUT.Init() == false)
+	{
+		return -1;
+	}
+
+	if (DX_CONTEXT.Init() == false)
+	{
+		return -1;
+	}
+
+	if (DX_WINDOW.Init() == false)
+	{
+		return -1;
+	}
+
+	//if (DX_ONNX.Init(L"./Resources/Onnx/udnie-9.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
+	//{
+	//	return -1;
+	//}
+	if (DX_ONNX.Init(L"./Resources/Onnx/adain_end2end.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
+	{
+		return -1;
+	}
+
+	//if (DX_ONNX.Init(L"./Resources/Onnx/FHD/rain_princess_opset12_dyn.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
+	//{
+	//	return -1;
+	//}
+
+	if (DX_ONNX.Init(L"./Resources/Onnx/FHD/mosaic_opset12_dyn.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
+	{
+		return -1;
+	}
+
+	//if (DX_ONNX.Init(L"./Resources/Onnx/FHD/udnie_opset12_dyn.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
+	//{
+	//	return -1;
+	//}
+
+	std::chrono::system_clock::time_point preTick = std::chrono::system_clock::now();
+	std::chrono::system_clock::time_point tick = preTick;
+
+    DX_IMAGE.Init();
+    DX_MANAGER.Init();
+    { auto* c = DX_CONTEXT.InitCommandList(); DX_MANAGER.UploadGPUResource(c); DX_CONTEXT.ExecuteCommandList(); }
+
+    while (!DX_WINDOW.ShouldClose())
     {
-		//if (DX_ONNX.Init(L"./Resources/Onnx/udnie-9.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
-		//{
-		//	return -1;
-		//}
-		//if (DX_ONNX.Init(L"./Resources/Onnx/adain_end2end.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
-		//{
-		//	return -1;
-		//}
+		preTick = tick;
+		tick = std::chrono::system_clock::now();
+		std::chrono::duration<float>sec = tick - preTick;
+		float deltaTime = sec.count();
 
-		//if (DX_ONNX.Init(L"./Resources/Onnx/FHD/rain_princess_opset12_dyn.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
-		//{
-		//	return -1;
-		//}
+		std::chrono::system_clock::time_point startTime = std::chrono::system_clock::now();
+		std::chrono::duration<float> endSecStart = std::chrono::system_clock::now() - startTime;
 
-		if (DX_ONNX.Init(L"./Resources/Onnx/FHD/mosaic_opset12_dyn.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
+		bool updated = DX_WINDOW.MessageUpdate(deltaTime);
+
+        DX_WINDOW.Update(deltaTime);
+		//Util::Print(deltaTime, "TICK");
 		{
-			return -1;
+			ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
+			DX_MANAGER.RenderOffscreen(cmd);
+			DX_MANAGER.RecordPreprocess(cmd);          
+			DX_CONTEXT.ExecuteCommandList();        
+
+			endSecStart = std::chrono::system_clock::now() - startTime;
+			//Util::Print((float)endSecStart.count(), "ONNX START");
+#if DEBUG_DUMP
+			DX_MANAGER.Debug_DumpBuffer(DX_ONNX.GetInputBufferContent().Get(), "CONTENT");
+			DX_MANAGER.Debug_DumpBuffer(DX_ONNX.GetInputBufferStyle().Get(), "STYLE");
+#endif
 		}
 
-		//if (DX_ONNX.Init(L"./Resources/Onnx/FHD/udnie_opset12_dyn.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
-		//{
-		//	return -1;
-		//}
+		
+		DX_ONNX.Run();
+		endSecStart = std::chrono::system_clock::now() - startTime;
+		//Util::Print((float)endSecStart.count(), "ONNX RUNNING");
 
+		{
+			ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
+			DX_MANAGER.RecordPostprocess(cmd);
 
-        DX_IMAGE.Init();
-        DX_MANAGER.Init();
-        { auto* c = DX_CONTEXT.InitCommandList(); DX_MANAGER.UploadGPUResource(c); DX_CONTEXT.ExecuteCommandList(); }
+			//endSecStart = std::chrono::system_clock::now() - startTime;
+			//Util::Print((float)endSecStart.count(), "RecordPostprocess");
 
-        while (!DX_WINDOW.ShouldClose())
-        {
-            DX_WINDOW.Update();
-			{
-				ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
-				DX_MANAGER.RenderOffscreen(cmd);
-				DX_MANAGER.RecordPreprocess(cmd);          
-				DX_CONTEXT.ExecuteCommandList();        
-#if DEBUG_DUMP
-				DX_MANAGER.Debug_DumpBuffer(DX_ONNX.GetInputBufferContent().Get(), "CONTENT");
-				DX_MANAGER.Debug_DumpBuffer(DX_ONNX.GetInputBufferStyle().Get(), "STYLE");
-#endif
+			DX_MANAGER.BlitToBackbuffer(cmd);
 
-			}
+			//endSecStart = std::chrono::system_clock::now() - startTime;
+			//Util::Print((float)endSecStart.count(), "BlitToBackbuffer");
 
-			// ORT 실행은 반드시 전처리 제출/대기 후
-			DX_ONNX.Run();
+			DX_CONTEXT.ExecuteCommandList();
 
-			// CL #2: 후처리(ORT 출력 SRV -> OnnxTex UAV) + 스크린 블릿
-			{
-				ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
-				DX_MANAGER.RecordPostprocess(cmd);
-				DX_MANAGER.BlitToBackbuffer(cmd);
-				DX_CONTEXT.ExecuteCommandList();
-				DX_WINDOW.Present();
-			}
+			//endSecStart = std::chrono::system_clock::now() - startTime;
+			//Util::Print((float)endSecStart.count(), "ExecuteCommandList");
 
-        }
+			DX_WINDOW.Present();
 
-        DX_MANAGER.Shutdown();
-        DX_IMAGE.Shutdown();
-        DX_ONNX.Shutdown();
-        DX_WINDOW.Shutdown();
-        DX_CONTEXT.Shutdown();
-    }
+			//endSecStart = std::chrono::system_clock::now() - startTime;
+			//Util::Print((float)endSecStart.count(), "ONNX END");
+		}
+	}
+
+    DX_MANAGER.Shutdown();
+    DX_IMAGE.Shutdown();
+    DX_ONNX.Shutdown();
+    DX_WINDOW.Shutdown();
+    DX_CONTEXT.Shutdown();
+	DX_INPUT.Shutdown();
 
     DX_DEBUG_LAYER.Shutdown();
     return 0;
