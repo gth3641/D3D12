@@ -1,8 +1,10 @@
 #include "Window.h"
 #include "Manager/OnnxManager.h"
 #include "Manager/DirectXManager.h"
+#include "Manager/InputManager.h"
+#include "Util/Util.h"
 #include <comdef.h>
-
+#include <numbers> 
 
 
 #pragma comment(lib, "User32.lib")
@@ -117,10 +119,13 @@ bool DXWindow::Init()
 		return false;
 	}
 
+	DX_INPUT.AddDelegate(VK_LCONTROL, this, &DXWindow::SetMouseLock);
+	SetMouseLock();
+
 	return true;
 }
 
-void DXWindow::Update()
+void DXWindow::Update(float deltaTime)
 {
 	if (DX_WINDOW.ShouldResize())
 	{
@@ -132,8 +137,8 @@ void DXWindow::Update()
 		DX_CONTEXT.Flush(DXWindow::GetFrameCount());
 	}
 
-	MessageUpdate();
-	LogicUpdate();
+	MouseUpdate(deltaTime);
+	LogicUpdate(deltaTime);
 }
 
 void DXWindow::Present()
@@ -144,6 +149,8 @@ void DXWindow::Present()
 
 void DXWindow::Shutdown()
 {
+	DX_INPUT.RemoveDelegate(VK_LCONTROL, this);
+
 	ReleaseBuffers();
 
 	m_rtvDescHeap.Release();
@@ -300,20 +307,74 @@ D3D12_CPU_DESCRIPTOR_HANDLE DXWindow::GetRtvHandle(size_t index)
 }
 
 
-void DXWindow::MessageUpdate()
+bool DXWindow::MessageUpdate(float deltaTime)
 {
 	MSG msg;
+	bool rtValue = false;
 
 	while (PeekMessageW(&msg, m_window, 0, 0, PM_REMOVE))
 	{
 		TranslateMessage(&msg);
 		DispatchMessageW(&msg);
+		rtValue = true;
 	}
+
+	return rtValue;
 }
 
-void DXWindow::LogicUpdate()
+void DXWindow::SetMouseLock(bool bForce)
 {
-	DX_MANAGER.Update();
+	if (bForce == false && m_mouseLock == DX_INPUT.isToggleKey(VK_LCONTROL))
+	{
+		return;
+	}
+	
+	SetMouseLock();
+}
+
+void DXWindow::SetMouseLock()
+{
+	m_mouseLock = DX_INPUT.isToggleKey(VK_LCONTROL);
+
+	if (m_mouseLock == true)
+	{
+		RECT cr;
+		if (GetClientRect(m_window, &cr))
+		{
+			POINT pt{ 0,0 };            
+			ClientToScreen(m_window, &pt);
+			cr.left += pt.x;
+			cr.right += pt.x;
+			cr.top += pt.y;
+			cr.bottom += pt.y;
+
+			ClipCursor(&cr);
+			while (ShowCursor(FALSE) >= 0) {}
+
+			pt.x = (cr.left + cr.right) / 2;
+			pt.y = (cr.top + cr.bottom) / 2;
+
+			m_ptMouseMove.x = 0;
+			m_ptMouseMove.y = 0;
+
+			SetCursorPos(pt.x, pt.y);
+		}
+	}
+	else 
+	{
+		ClipCursor(nullptr);
+		while (ShowCursor(TRUE) < 0) {} 
+	}
+
+}
+
+void DXWindow::LogicUpdate(float deltaTime)
+{
+	DX_INPUT.update(deltaTime);
+
+	DX_MANAGER.Update(deltaTime);
+
+	
 }
 
 bool DXWindow::GetBuffers()
@@ -375,12 +436,41 @@ LRESULT DXWindow::OnWindowMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
 			return 0;
 		}
 
-
 		default:
 			break;
 	}
 
-
-
 	return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+void DXWindow::MouseUpdate(float deltaTime)
+{
+	if (m_mouseLock == true)
+	{
+		RECT cr;
+		if (GetClientRect(m_window, &cr))
+		{
+			POINT pt{ 0,0 };
+			ClientToScreen(m_window, &pt);
+			cr.left += pt.x;
+			cr.right += pt.x;
+			cr.top += pt.y;
+			cr.bottom += pt.y;
+
+			POINT center{ 0,0 };
+			center.x = (cr.left + cr.right) / 2;
+			center.y = (cr.top + cr.bottom) / 2;
+
+			GetCursorPos(&m_ptMouse);
+
+			m_ptMouseMove.x = m_ptMouse.x - center.x;
+			m_ptMouseMove.y = m_ptMouse.y - center.y;
+
+			//Util::Print(m_ptMouse.x, m_ptMouse.y, "Mouse");
+			//Util::Print(pt.x, pt.y, "Point");
+			//Util::Print(center.x, center.y, "Center");
+
+			SetCursorPos(center.x, center.y);
+		}
+	}
 }

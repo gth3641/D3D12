@@ -145,9 +145,11 @@
     <ClCompile Include="DebugD3D12\DebugLayer.cpp" />
     <ClCompile Include="Manager\DirectXManager.cpp" />
     <ClCompile Include="Manager\ImageManager.cpp" />
+    <ClCompile Include="Manager\InputManager.cpp" />
     <ClCompile Include="Manager\OnnxManager.cpp" />
     <ClCompile Include="Object\Object.cpp" />
     <ClCompile Include="Object\RenderingObject.cpp" />
+    <ClCompile Include="Object\RenderingObject3D.cpp" />
     <ClCompile Include="OnnxRunner\OnnxRunnerInterface.cpp" />
     <ClCompile Include="OnnxRunner\OnnxRunner_AdaIN.cpp" />
     <ClCompile Include="OnnxRunner\OnnxRunner_FastNeuralStyle.cpp" />
@@ -166,9 +168,11 @@
     <ClInclude Include="DebugD3D12\DebugLayer.h" />
     <ClInclude Include="Manager\DirectXManager.h" />
     <ClInclude Include="Manager\ImageManager.h" />
+    <ClInclude Include="Manager\InputManager.h" />
     <ClInclude Include="Manager\OnnxManager.h" />
     <ClInclude Include="Object\Object.h" />
     <ClInclude Include="Object\RenderingObject.h" />
+    <ClInclude Include="Object\RenderingObject3D.h" />
     <ClInclude Include="OnnxRunner\OnnxRunnerInterface.h" />
     <ClInclude Include="OnnxRunner\OnnxRunner_AdaIN.h" />
     <ClInclude Include="OnnxRunner\OnnxRunner_FastNeuralStyle.h" />

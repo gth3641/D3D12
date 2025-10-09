@@ -11,8 +11,10 @@ class RenderingObject : public Object
 public:
 	RenderingObject();
 	~RenderingObject();
+public: // Static & Override
+	virtual bool Init(const std::filesystem::path& imagePath, UINT64 index);
+
 public: // Functions
-	bool Init(const std::filesystem::path& imagePath, UINT64 index);
 	void UploadGPUResource(ID3D12GraphicsCommandList7* cmdList);
 
 	const std::vector<Triangle>& GetTriangleVector() const { return m_Triangle; }
@@ -34,7 +36,7 @@ public: // Functions
 	void SetVbDirty(bool dirty) { mVbDirty = dirty; }
 	void SetTexDirty(bool dirty) { mTexDirty = dirty; }
 
-private: // Functions
+protected: // Functions
 	void AddTexture(const std::filesystem::path& imagePath);
 	void UploadTextureBuffer();
 	void CreateSRV();
@@ -42,7 +44,7 @@ private: // Functions
 	void UpateTexture(BYTE* dst);
 	void UpdateVertexBuffer(BYTE* dst);
 
-private: // Variables
+protected: // Variables
 	std::vector<Triangle> m_Triangle;
 
 	std::shared_ptr<Image> m_Image;

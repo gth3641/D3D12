@@ -6,7 +6,7 @@
 #include "Util/Util.h"
 #include "Util/OnnxDefine.h"
 
-#include "Object/RenderingObject.h"
+#include "Object/RenderingObject3D.h"
 
 #include "d3dx12.h"
 #include "d3d12.h"
@@ -21,7 +21,18 @@ class Shader;
 
 using namespace DirectX;
 
-struct Vtx { XMFLOAT3 pos; XMFLOAT3 col; };
+
+
+struct Camera {
+    XMFLOAT3 pos{ 0, 2.0f, -6.0f };     // 월드 위치
+    XMFLOAT3 dir{ 0, 0,  1.0f };        // 바라보는 “방향”(정규화 권장, LH 기준 +Z가 앞)
+    XMFLOAT3 up{ 0, 1.0f, 0 };          // 보통 월드업
+    float fovY = XM_PIDIV4;
+    float nearZ = 0.1f;
+    float farZ = 500.0f;
+    float yaw = 0.0f;                        // +Y축 기준 회전
+    float pitch = 0.0f;                        // X축 기준 회전(위/아래)
+};
 
 class DirectXManager
 {
@@ -65,7 +76,7 @@ public: // Static & Override
 public: // Functions
     bool Init();
     void Shutdown();
-    void Update();
+    void Update(float deltaTime);
     void RenderCube(ID3D12GraphicsCommandList7* cmd); 
     void RenderImage(ID3D12GraphicsCommandList7* cmd); 
     void Resize();
@@ -81,6 +92,8 @@ public: // Functions
     void RecordPreprocess(ID3D12GraphicsCommandList7* cmd);
     void RecordPostprocess(ID3D12GraphicsCommandList7* cmd);
 
+    void OnChangedMouseLock();
+
     bool CreateOnnxComputePipeline();
 
     //===========Getter=================//
@@ -95,6 +108,7 @@ public: // Functions
     //==================================//
 private: // Functions
     void InitUploadRenderingObject();
+    void InitGeometry();
     void InitShader();
 
 
@@ -120,6 +134,8 @@ private: // Variables
     RenderingObject RenderingObject1;
     RenderingObject RenderingObject2;
     RenderingObject m_StyleObject;
+    RenderingObject3D m_PlaneObject;
+    RenderingObject3D m_CubeObject;
 
 
     ComPointer<ID3D12RootSignature> m_RootSignature;
@@ -174,16 +190,10 @@ public:
     void Debug_DumpOrtOutput(ID3D12GraphicsCommandList7* cmd);
     void Debug_DumpBuffer(ID3D12Resource* src, const char* tag);
 
-//private:
-//    ComPointer<ID3D12PipelineState> m_DebugShowInputPSO;
-//    ComPointer<ID3D12PipelineState> m_CopyTexToTex2DPSO;
-//    ComPointer<ID3D12PipelineState> m_FillPSO;
-
-
 // Render Cube
 private:// Functions
     bool InitCubePipeline();     // RS/PSO/셰이더
-    bool InitCubeGeometry();     // VB/IB
+    //bool InitCubeGeometry();     // VB/IB
     bool InitDepth(UINT w, UINT h);
     void DestroyDepth();
 
@@ -207,6 +217,22 @@ private: // Variables
     // 뷰/프로젝션
     float mAngle = 0.f;
     float mAspect = 16.f / 9.f;
+
+
+// Render Cam
+public:
+    // === Ground geometry ===
+    //bool InitGroundGeometry();
+   // void RenderGround(ID3D12GraphicsCommandList7* cmd);
+private:
+
+    Camera mCam;
+
+    //ComPointer<ID3D12Resource2>  mGroundVB;
+    //ComPointer<ID3D12Resource2>  mGroundIB;
+    //D3D12_VERTEX_BUFFER_VIEW     mGroundVBV{};
+    //D3D12_INDEX_BUFFER_VIEW      mGroundIBV{};
+    //UINT                         mGroundIndexCount = 0;
 
 };
 

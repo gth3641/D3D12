@@ -2,6 +2,8 @@
 
 #include "OnnxManager.h"
 #include "ImageManager.h"
+#include "InputManager.h"
+
 #include "Support/Window.h"
 #include "Support/Onnx/OnnxService.h"
 #include "Support/Shader.h"
@@ -11,6 +13,9 @@
 #include <vector>
 #include <assert.h>
 #include <iostream>
+#include <numbers> 
+
+#define MOVE_SPEED 10
 
 static const char* g_VS = R"(
 cbuffer MVP : register(b0) { float4x4 uMVP; };
@@ -36,6 +41,63 @@ float4 main(PSIn i) : SV_Target
     return gTex.Sample(gSmp, i.uv);
 }
 )";
+
+
+//static inline DirectX::XMMATRIX MakeVP(const Camera& cam, float aspect)
+//{
+//	auto eye = XMLoadFloat3(&cam.pos);
+//	auto at = XMLoadFloat3(&cam.at);
+//	auto up = XMLoadFloat3(&cam.up);
+//	auto V = XMMatrixLookAtLH(eye, at, up);
+//	auto P = XMMatrixPerspectiveFovLH(cam.fovY, aspect, cam.nearZ, cam.farZ);
+//	return XMMatrixMultiply(V, P);
+//}
+
+static inline DirectX::XMFLOAT3 DirFromYawPitchLH(float yaw, float pitch)
+{
+	float cy = cosf(yaw), sy = sinf(yaw);
+	float cp = cosf(pitch), sp = sinf(pitch);
+	XMFLOAT3 d{ cp * sy, sp, cp * cy };
+	
+	XMVECTOR v = XMVector3Normalize(XMLoadFloat3(&d));
+	XMStoreFloat3(&d, v);
+	return d;
+}
+
+static inline DirectX::XMMATRIX MakeVP_Dir(const Camera& cam, float aspect)
+{
+	XMVECTOR eye = XMLoadFloat3(&cam.pos);
+	XMVECTOR dir = XMVector3Normalize(XMLoadFloat3(&cam.dir));
+	XMVECTOR up = XMVector3Normalize(XMLoadFloat3(&cam.up));
+
+	XMMATRIX V = XMMatrixLookToLH(eye, dir, up); 
+	XMMATRIX P = XMMatrixPerspectiveFovLH(cam.fovY, aspect, cam.nearZ, cam.farZ);
+	return XMMatrixMultiply(V, P);
+}
+
+static void MoveCamera_FPS(Camera& c, float forward, float right, float upMove, float dt, float speed)
+{
+	// dir/up로 right 벡터 도출
+	XMVECTOR dir = XMVector3Normalize(XMLoadFloat3(&c.dir));
+	XMVECTOR up = XMVectorSet(0, 1, 0, 0); // 월드업 고정(롤 없음)
+	XMVECTOR rightV = XMVector3Normalize(XMVector3Cross(up, dir)); // RH? LH? 방향만 맞으면 OK
+
+	XMVECTOR pos = XMLoadFloat3(&c.pos);
+	pos = XMVectorAdd(pos, XMVectorScale(dir, forward * speed * dt));
+	pos = XMVectorAdd(pos, XMVectorScale(rightV, right * speed * dt));
+	pos = XMVectorAdd(pos, XMVectorScale(up, upMove * speed * dt));
+	XMStoreFloat3(&c.pos, pos);
+}
+
+static void RotateCameraYawPitch(Camera& c, float dYaw, float dPitch)
+{
+	c.yaw += dYaw;
+
+	float min = (XM_PIDIV2 * 0.99f < c.pitch + dPitch ? XM_PIDIV2 * 0.99f : c.pitch + dPitch);
+	c.pitch = -XM_PIDIV2 * 0.99f > min ? -XM_PIDIV2 * 0.99f : min;
+	c.dir = DirFromYawPitchLH(c.yaw, c.pitch);
+}
+
 
 static inline void GetBackbufferSize(uint32_t& w, uint32_t& h) {
 	ID3D12Resource* back = DX_WINDOW.GetBackbuffer(); // 이미 레포에 있는 함수
@@ -371,9 +433,7 @@ bool DirectXManager::Init()
 		}
 
 	}
-	SetVerticies();
 	SetVertexLayout();
-	InitUploadRenderingObject();
 
 	UINT w, h;
 	DX_WINDOW.GetBackbufferSize(w, h);
@@ -385,9 +445,14 @@ bool DirectXManager::Init()
 	InitBlitPipeline();
 	CreateSimpleBlitPipeline(); // 새 전용 블릿 PSO 추가
 	InitCubePipeline();
-	InitCubeGeometry();
+	//InitGroundGeometry();
+	//InitCubeGeometry();
 	CreateGreenPipeline();
 	CreateFullscreenQuadVB(w, h);
+
+	SetVerticies();
+	InitUploadRenderingObject();
+	InitGeometry();
 
 	// ★ ONNX IO 준비 + 디스크립터 구성
 	CreateOnnxResources(w, h);
@@ -406,10 +471,14 @@ bool DirectXManager::Init()
 	InitDepth(w, h);
 	mAspect = (float)w / (float)h;
 
+	mCam.pos = { 0, 2.0f, -6.0f };
+
+	DX_WINDOW.GetDelegate().AddDelegate(this, &DirectXManager::OnChangedMouseLock);
+
 	return true;
 }
 
-void DirectXManager::Update()
+void DirectXManager::Update(float deltaTime)
 {
 	//DX_CONTEXT.SignalAndWait();
 	static int frame = 0;
@@ -435,44 +504,27 @@ void DirectXManager::Update()
 	GetRenderingObject1().UploadCPUResource(false, true);
 
 	mAngle += 1.0f * (1.0f / 60.0f); // 1 rad/sec 정도
-}
 
-void DirectXManager::RenderCube(ID3D12GraphicsCommandList7* cmd)
-{
-	auto vp = DX_WINDOW.CreateViewport();
-	auto sc = DX_WINDOW.CreateScissorRect();
-	cmd->RSSetViewports(1, &vp);
-	cmd->RSSetScissorRects(1, &sc);
+	//MoveAxis consumeAxis = DX_INPUT.Consume();
 
-	cmd->ClearDepthStencilView(mDSV, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
-	// 오프스크린에 그리기(최종 blit로 화면에 나올 수 있게)
-	cmd->OMSetRenderTargets(1, &mRtvScene, FALSE, &mDSV);
 
-	cmd->SetPipelineState(mCubePSO);
-	cmd->SetGraphicsRootSignature(mCubeRootSig);
+	float moveAxis_X = 0.f;
+	moveAxis_X += DX_INPUT.isStateKeyDown('D') == true ? 1.f : 0.f;
+	moveAxis_X -= DX_INPUT.isStateKeyDown('A') == true ? 1.f : 0.f;
 
-	// === SRV 힙 + t0 바인딩 ===
-	ID3D12DescriptorHeap* srvHeap = DX_IMAGE.GetSrvheap();
-	cmd->SetDescriptorHeaps(1, &srvHeap);
-	// RS param[1] == t0 테이블
-	cmd->SetGraphicsRootDescriptorTable(1, DX_IMAGE.GetGPUDescriptorHandle(m_StyleObject.GetTestIndex())); // index=2
+	float moveAxis_Y = 0.f;
+	moveAxis_Y += DX_INPUT.isStateKeyDown('W') == true ? 1.f : 0.f;
+	moveAxis_Y -= DX_INPUT.isStateKeyDown('S') == true ? 1.f : 0.f;
 
-	// IA
-	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	cmd->IASetVertexBuffers(0, 1, &mVBV);
-	cmd->IASetIndexBuffer(&mIBV);
+	if (DX_WINDOW.IsMouseLock() == true)
+	{
+		const POINT& deltaPos = DX_WINDOW.GetMouseMove();
 
-	// MVP
-	XMMATRIX world = XMMatrixRotationY(mAngle) * XMMatrixRotationX(mAngle * 0.5f);
-	XMVECTOR eye = XMVectorSet(0, 0, -3, 0), at = XMVectorSet(0, 0, 0, 0), up = XMVectorSet(0, 1, 0, 0);
-	XMMATRIX view = XMMatrixLookAtLH(eye, at, up);
-	XMMATRIX proj = XMMatrixPerspectiveFovLH(XM_PIDIV4, mAspect, 0.1f, 100.0f);
-	XMMATRIX mvp = XMMatrixTranspose(world * view * proj);
-	cmd->SetGraphicsRoot32BitConstants(0, 16, &mvp, 0);
+		RotateCameraYawPitch(mCam, deltaPos.x * deltaTime * (0.01f), deltaPos.y * deltaTime * (-0.01f));
+	}
 
-	cmd->DrawIndexedInstanced(mIndexCount, 1, 0, 0, 0);
-
+	MoveCamera_FPS(mCam, moveAxis_Y, moveAxis_X, 0.f, deltaTime, MOVE_SPEED);
 }
 
 void DirectXManager::RenderImage(ID3D12GraphicsCommandList7* cmd)
@@ -513,6 +565,8 @@ void DirectXManager::RenderImage(ID3D12GraphicsCommandList7* cmd)
 
 void DirectXManager::Shutdown()
 {
+	DX_WINDOW.GetDelegate().RemoveDelegate(this);
+
 	DestroyOffscreen();
 
 	m_RootSignature.Release();
@@ -543,6 +597,8 @@ void DirectXManager::UploadGPUResource(ID3D12GraphicsCommandList7* cmdList)
 	RenderingObject1.UploadGPUResource(cmdList);
 	RenderingObject2.UploadGPUResource(cmdList);
 	m_StyleObject.UploadGPUResource(cmdList);
+	m_PlaneObject.UploadGPUResource(cmdList);
+	m_CubeObject.UploadGPUResource(cmdList);
 }
 
 
@@ -668,11 +724,15 @@ void DirectXManager::RecordPostprocess(ID3D12GraphicsCommandList7* cmd)
 	}
 }
 
+void DirectXManager::OnChangedMouseLock()
+{
+}
+
 
 void DirectXManager::CreateFullscreenQuadVB(UINT w, UINT h)
 {
-	struct Vtx { float x, y, u, v; };
-	Vtx quad[6] = {
+	struct Vtx2 { float x, y, u, v; };
+	Vtx2 quad[6] = {
 		{ 0.f,    0.f,    0.f, 0.f },
 		{ 0.f,    (float)h, 0.f, 1.f },
 		{ (float)w, (float)h, 1.f, 1.f },
@@ -723,7 +783,7 @@ void DirectXManager::CreateFullscreenQuadVB(UINT w, UINT h)
 	// VBV
 	mFSQuadVBV.BufferLocation = mFSQuadVB->GetGPUVirtualAddress();
 	mFSQuadVBV.SizeInBytes = vbSize;
-	mFSQuadVBV.StrideInBytes = sizeof(Vtx);
+	mFSQuadVBV.StrideInBytes = sizeof(Vtx2);
 }
 
 
@@ -996,83 +1056,6 @@ bool DirectXManager::InitCubePipeline()
 
 }
 
-bool DirectXManager::InitCubeGeometry()
-{
-	struct CubeVtx { XMFLOAT3 pos; XMFLOAT2 uv; };
-	const float c = 0.5f;
-
-	// 각 면별 4버텍스(정석 매핑)
-	CubeVtx v[] = {
-		// +Z (front)
-		{{-c,-c, c},{0,1}}, {{-c, c, c},{0,0}}, {{ c, c, c},{1,0}}, {{ c,-c, c},{1,1}},
-		// -Z (back)
-		{{ c,-c,-c},{0,1}}, {{ c, c,-c},{0,0}}, {{-c, c,-c},{1,0}}, {{-c,-c,-c},{1,1}},
-		// +X (right)
-		{{ c,-c, c},{0,1}}, {{ c, c, c},{0,0}}, {{ c, c,-c},{1,0}}, {{ c,-c,-c},{1,1}},
-		// -X (left)
-		{{-c,-c,-c},{0,1}}, {{-c, c,-c},{0,0}}, {{-c, c, c},{1,0}}, {{-c,-c, c},{1,1}},
-		// +Y (top)
-		{{-c, c, c},{0,1}}, {{-c, c,-c},{0,0}}, {{ c, c,-c},{1,0}}, {{ c, c, c},{1,1}},
-		// -Y (bottom)
-		{{-c,-c,-c},{0,1}}, {{-c,-c, c},{0,0}}, {{ c,-c, c},{1,0}}, {{ c,-c,-c},{1,1}},
-	};
-	uint16_t idx[] = {
-		0,1,2, 0,2,3,
-		4,5,6, 4,6,7,
-		8,9,10, 8,10,11,
-		12,13,14, 12,14,15,
-		16,17,18, 16,18,19,
-		20,21,22, 20,22,23,
-	};
-	mIndexCount = (UINT)_countof(idx);
-
-	// 업로드 → DEFAULT 복사 (기존 코드 재사용)
-	auto dev = DX_CONTEXT.GetDevice();
-
-	size_t vbSize = sizeof(v);
-	CD3DX12_HEAP_PROPERTIES hpDef(D3D12_HEAP_TYPE_DEFAULT), hpUp(D3D12_HEAP_TYPE_UPLOAD);
-	CD3DX12_RESOURCE_DESC   rdVB = CD3DX12_RESOURCE_DESC::Buffer(vbSize);
-
-	ComPointer<ID3D12Resource> uploadVB;
-	dev->CreateCommittedResource(&hpDef, D3D12_HEAP_FLAG_NONE, &rdVB,
-		D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&mVB));
-	dev->CreateCommittedResource(&hpUp, D3D12_HEAP_FLAG_NONE, &rdVB,
-		D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&uploadVB));
-
-	size_t ibSize = sizeof(idx);
-	CD3DX12_RESOURCE_DESC rdIB = CD3DX12_RESOURCE_DESC::Buffer(ibSize);
-	ComPointer<ID3D12Resource> uploadIB;
-	dev->CreateCommittedResource(&hpDef, D3D12_HEAP_FLAG_NONE, &rdIB,
-		D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&mIB));
-	dev->CreateCommittedResource(&hpUp, D3D12_HEAP_FLAG_NONE, &rdIB,
-		D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&uploadIB));
-
-	void* p = nullptr;
-	uploadVB->Map(0, nullptr, &p); memcpy(p, v, vbSize); uploadVB->Unmap(0, nullptr);
-	uploadIB->Map(0, nullptr, &p); memcpy(p, idx, ibSize); uploadIB->Unmap(0, nullptr);
-
-	ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
-	cmd->CopyResource(mVB, uploadVB);
-	cmd->CopyResource(mIB, uploadIB);
-
-	auto b1 = CD3DX12_RESOURCE_BARRIER::Transition(mVB, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
-	auto b2 = CD3DX12_RESOURCE_BARRIER::Transition(mIB, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDEX_BUFFER);
-	cmd->ResourceBarrier(1, &b1);
-	cmd->ResourceBarrier(1, &b2);
-
-	DX_CONTEXT.ExecuteCommandList();
-
-	mVBV.BufferLocation = mVB->GetGPUVirtualAddress();
-	mVBV.StrideInBytes = sizeof(CubeVtx);
-	mVBV.SizeInBytes = (UINT)vbSize;
-
-	mIBV.BufferLocation = mIB->GetGPUVirtualAddress();
-	mIBV.Format = DXGI_FORMAT_R16_UINT;
-	mIBV.SizeInBytes = (UINT)ibSize;
-
-	return true;
-}
-
 bool DirectXManager::InitDepth(UINT w, UINT h)
 {
 	auto dev = DX_CONTEXT.GetDevice();
@@ -1113,6 +1096,7 @@ void DirectXManager::DestroyDepth()
 {
 	if (mDepth) { mDepth.Release(); }
 }
+
 
 void DirectXManager::ResizeOnnxResources(UINT W, UINT H)
 {
@@ -1194,43 +1178,7 @@ bool DirectXManager::CreateOnnxComputePipeline()
 	hr = device->CreateComputePipelineState(&postDesc, IID_PPV_ARGS(&m_Onnx->PostPSO));
 	if (FAILED(hr)) return false;
 
-	//{
-	//	ComPointer<ID3DBlob> csDbg, err;
-	//	HRESULT hr = D3DCompileFromFile(L"./Shaders/cs_debug_show_input.hlsl", nullptr, nullptr,
-	//		"main", "cs_5_0", 0, 0, &csDbg, &err);
-	//	if (SUCCEEDED(hr)) {
-	//		D3D12_COMPUTE_PIPELINE_STATE_DESC dbg{};
-	//		dbg.pRootSignature = m_Onnx->PreRS.Get(); // t0/u0/b0 동일 RS 재사용
-	//		dbg.CS = { csDbg->GetBufferPointer(), csDbg->GetBufferSize() };
-	//		DX_CONTEXT.GetDevice()->CreateComputePipelineState(&dbg, IID_PPV_ARGS(&m_DebugShowInputPSO));
-	//	}
-	//}
-
-	//{
-	//	ComPointer<ID3DBlob> csDbg, err;
-	//	HRESULT hr = D3DCompileFromFile(L"./Shaders/cs_copy_tex_to_tex2d.hlsl", nullptr, nullptr,
-	//		"main", "cs_5_0", 0, 0, &csDbg, &err);
-	//	if (SUCCEEDED(hr)) {
-	//		D3D12_COMPUTE_PIPELINE_STATE_DESC dbg{};
-	//		dbg.pRootSignature = m_Onnx->PreRS.Get(); // t0/u0/b0 동일 RS 재사용
-	//		dbg.CS = { csDbg->GetBufferPointer(), csDbg->GetBufferSize() };
-	//		DX_CONTEXT.GetDevice()->CreateComputePipelineState(&dbg, IID_PPV_ARGS(&m_CopyTexToTex2DPSO));
-	//	}
-	//}
-
-	//{
-	//	ComPointer<ID3DBlob> csDbg, err;
-	//	HRESULT hr = D3DCompileFromFile(L"./Shaders/cs_fill_buffer.hlsl", nullptr, nullptr,
-	//		"main", "cs_5_0", 0, 0, &csDbg, &err);
-	//	if (SUCCEEDED(hr)) {
-	//		D3D12_COMPUTE_PIPELINE_STATE_DESC dbg{};
-	//		dbg.pRootSignature = m_Onnx->PreRS.Get(); // t0/u0/b0 동일 RS 재사용
-	//		dbg.CS = { csDbg->GetBufferPointer(), csDbg->GetBufferSize() };
-	//		DX_CONTEXT.GetDevice()->CreateComputePipelineState(&dbg, IID_PPV_ARGS(&m_FillPSO));
-	//	}
-
-	//}
-
+	
 	return true;
 }
 
@@ -1264,10 +1212,19 @@ void DirectXManager::RenderOffscreen(ID3D12GraphicsCommandList7* cmd)
 	cmd->OMSetRenderTargets(1, &mRtvScene, FALSE, nullptr);
 	cmd->ClearRenderTargetView(mRtvScene, clear, 0, nullptr);
 
+	auto vp = DX_WINDOW.CreateViewport();
+	auto sc = DX_WINDOW.CreateScissorRect();
+	cmd->RSSetViewports(1, &vp);
+	cmd->RSSetScissorRects(1, &sc);
+	cmd->ClearDepthStencilView(mDSV, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+
 	UploadGPUResource(cmd);
 
 	RenderImage(cmd);
-	RenderCube(cmd);
+
+	m_PlaneObject.Rendering(cmd, mCam, mAspect, mRtvScene, mDSV, 0, 0.f);
+	m_CubeObject.Rendering(cmd, mCam, mAspect, mRtvScene, mDSV, 0, mAngle);
+
 
 	{
 		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
@@ -1283,7 +1240,6 @@ void DirectXManager::RenderOffscreen(ID3D12GraphicsCommandList7* cmd)
 
 void DirectXManager::BlitToBackbuffer(ID3D12GraphicsCommandList7* cmd)
 {
-	// OnnxTex는 PS에서 읽음
 	if (mOnnxTexState != D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE) {
 		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
 			m_OnnxGPU->OnnxTex.Get(), mOnnxTexState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
@@ -1291,14 +1247,12 @@ void DirectXManager::BlitToBackbuffer(ID3D12GraphicsCommandList7* cmd)
 		mOnnxTexState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 	}
 
-	// 뷰포트/시저
 	UINT bw = 0, bh = 0; DX_WINDOW.GetBackbufferSize(bw, bh);
 	D3D12_VIEWPORT vp{ 0,0,(float)bw,(float)bh,0,1 };
 	D3D12_RECT sc{ 0,0,(LONG)bw,(LONG)bh };
 	cmd->RSSetViewports(1, &vp);
 	cmd->RSSetScissorRects(1, &sc);
 
-	// RTV 바인딩
 	auto rtv = DX_WINDOW.GetRtvHandle(DX_WINDOW.GetBackBufferIndex());
 	cmd->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
 
@@ -1312,7 +1266,7 @@ void DirectXManager::BlitToBackbuffer(ID3D12GraphicsCommandList7* cmd)
 	cmd->SetDescriptorHeaps(1, heaps);
 	cmd->SetGraphicsRootDescriptorTable(0, m_OnnxGPU->OnnxTexSRV_GPU);
 
-	// SV_VertexID 삼각형 1개
+	// SV_VertexID 
 	cmd->IASetVertexBuffers(0, 0, nullptr);
 	cmd->DrawInstanced(3, 1, 0, 0);
 }
@@ -1396,7 +1350,73 @@ void DirectXManager::InitUploadRenderingObject()
 		return;
 	}
 
+	if (m_PlaneObject.Init("./Resources/Block.png", 3, mCubePSO, mCubeRootSig) == false)
+	{
+		return;
+	}
 
+	if (m_CubeObject.Init("./Resources/Dog.png", 4, mCubePSO, mCubeRootSig) == false)
+	{
+		return;
+	}
+
+}
+
+void DirectXManager::InitGeometry()
+{
+	{
+		// 바닥 평면: XZ에 -50..+50, Y=0 (100m x 100m)
+		const float H = 50.0f;
+		// 타일링: 10m 당 1타일 -> 전체 10x10 타일
+		const float tile = 10.0f;
+
+		Vtx v[4] = {
+			{{-H, 0.0f, -H}, {0.0f,         0.0f        }},
+			{{-H, 0.0f,  H}, {0.0f,         100.0f / tile }},
+			{{ H, 0.0f,  H}, {100.0f / tile,  100.0f / tile }},
+			{{ H, 0.0f, -H}, {100.0f / tile,  0.0f        }},
+		};
+		uint16_t i[6] = { 0,1,2, 0,2,3 };
+		UINT index = 6;
+
+		const UINT vbSize = sizeof(v);
+		const UINT ibSize = sizeof(i);
+
+		m_PlaneObject.InitGeometry(v, vbSize, i, ibSize, index);
+	}
+
+	{
+		const float c = 0.5f;
+
+		// 각 면별 4버텍스
+		Vtx v[] = {
+			// +Z (front)
+			{{-c,-c, c},{0,1}}, {{-c, c, c},{0,0}}, {{ c, c, c},{1,0}}, {{ c,-c, c},{1,1}},
+			// -Z (back)
+			{{ c,-c,-c},{0,1}}, {{ c, c,-c},{0,0}}, {{-c, c,-c},{1,0}}, {{-c,-c,-c},{1,1}},
+			// +X (right)
+			{{ c,-c, c},{0,1}}, {{ c, c, c},{0,0}}, {{ c, c,-c},{1,0}}, {{ c,-c,-c},{1,1}},
+			// -X (left)
+			{{-c,-c,-c},{0,1}}, {{-c, c,-c},{0,0}}, {{-c, c, c},{1,0}}, {{-c,-c, c},{1,1}},
+			// +Y (top)
+			{{-c, c, c},{0,1}}, {{-c, c,-c},{0,0}}, {{ c, c,-c},{1,0}}, {{ c, c, c},{1,1}},
+			// -Y (bottom)
+			{{-c,-c,-c},{0,1}}, {{-c,-c, c},{0,0}}, {{ c,-c, c},{1,0}}, {{ c,-c,-c},{1,1}},
+		};
+		uint16_t idx[] = {
+			0,1,2, 0,2,3,
+			4,5,6, 4,6,7,
+			8,9,10, 8,10,11,
+			12,13,14, 12,14,15,
+			16,17,18, 16,18,19,
+			20,21,22, 20,22,23,
+		};
+
+		const UINT vbSize = sizeof(v);
+		const UINT ibSize = sizeof(idx);
+
+		m_CubeObject.InitGeometry(v, vbSize, idx, ibSize, (UINT)_countof(idx));
+	}
 }
 
 void DirectXManager::InitShader()

@@ -4,6 +4,9 @@
 #include "Support/ComPointer.h"
 #include "D3D/DXContext.h"
 
+#include <map>
+#include <vector>
+
 
 #define DX_WINDOW DXWindow::Get()
 
@@ -11,7 +14,7 @@ class DXWindow
 {
 public:
 	bool Init();
-	void Update();
+	void Update(float deltaTime);
 	void Present();
 	void Shutdown();
 	void Resize();
@@ -26,6 +29,10 @@ public:
 	inline bool ShouldClose() const { return m_shouldClose; }
 	inline bool ShouldResize() const { return m_shouldResize; }
 	inline bool IsFullscreen() const { return m_isFullscreen; }
+	inline bool IsMouseLock() const { return m_mouseLock; }
+	inline Delegate& GetDelegate() { return m_WindowDelegate; }
+	inline POINT GetMousePos() const { return m_ptMouse; }
+	inline POINT GetMouseMove() const { return m_ptMouseMove; }
 
 	inline UINT GetWidth() const { return m_width; }
 	inline UINT GetHeight() const { return m_height; }
@@ -46,14 +53,20 @@ public:
 
 	ComPointer<ID3D12DescriptorHeap> GetRtvDescHeap() { return m_rtvDescHeap; }
 
+	bool MessageUpdate(float deltaTime);
+
+	void SetMouseLock(bool bForce);
+	void SetMouseLock();
+
 private:
-	void MessageUpdate();
-	void LogicUpdate();
+	void LogicUpdate(float deltaTime);
 
 	bool GetBuffers();
 	void ReleaseBuffers();
 
 	static LRESULT CALLBACK OnWindowMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+	void MouseUpdate(float deltaTime);
 
 private:
 	ATOM m_wndClass = 0;
@@ -65,6 +78,10 @@ private:
 	UINT m_height = 1080;
 
 	bool m_isFullscreen = false;
+
+	bool m_mouseLock = false;
+	POINT m_ptMouse;
+	POINT m_ptMouseMove;
 
 	ComPointer<IDXGISwapChain3> m_swapChain;
 	ComPointer<ID3D12Resource2> m_buffers[FrameCount];
@@ -86,6 +103,7 @@ public: // Singleton pattern to ensure only one instance exists
 private:
 	DXWindow() = default;
 
+	Delegate m_WindowDelegate;
 };
 
 
