@@ -17,6 +17,8 @@
 
 #define MOVE_SPEED 10
 
+
+
 static const char* g_VS = R"(
 cbuffer MVP : register(b0) { float4x4 uMVP; };
 
@@ -42,16 +44,6 @@ float4 main(PSIn i) : SV_Target
 }
 )";
 
-
-//static inline DirectX::XMMATRIX MakeVP(const Camera& cam, float aspect)
-//{
-//	auto eye = XMLoadFloat3(&cam.pos);
-//	auto at = XMLoadFloat3(&cam.at);
-//	auto up = XMLoadFloat3(&cam.up);
-//	auto V = XMMatrixLookAtLH(eye, at, up);
-//	auto P = XMMatrixPerspectiveFovLH(cam.fovY, aspect, cam.nearZ, cam.farZ);
-//	return XMMatrixMultiply(V, P);
-//}
 
 static inline DirectX::XMFLOAT3 DirFromYawPitchLH(float yaw, float pitch)
 {
@@ -456,6 +448,9 @@ bool DirectXManager::Init()
 
 	// ★ ONNX IO 준비 + 디스크립터 구성
 	CreateOnnxResources(w, h);
+	CreateDebugFillOnnxTexPSO();
+	CreateDebugViewPreCHWPSO();
+
 
 	// 리소스 상태 초기화
 	mSceneColorState = D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -652,6 +647,59 @@ void DirectXManager::CreateOnnxResources(UINT W, UINT H)
 			mOnnxInputState);
 	}
 	break;
+
+	case OnnxType::ReCoNet:
+	{
+		OnnxService::CreateOnnxResources_ReCoNet(
+			W, H,
+			*m_StyleObject.GetImage().get(),
+			m_Onnx.get(),
+			m_OnnxGPU.get(),
+			mHeapCPU.Get(),
+			mSceneColor.Get(),
+			mOnnxTexState,
+			mOnnxInputState);
+	}
+	break;
+
+	case OnnxType::BlindVideo:
+	{
+		OnnxService::CreateOnnxResources_BlindVideo(
+			W, H,
+			*m_StyleObject.GetImage().get(),
+			m_Onnx.get(),
+			m_OnnxGPU.get(),
+			mHeapCPU.Get(),
+			mSceneColor.Get(),
+			mOnnxTexState,
+			mOnnxInputState);
+
+		// ★ Pt 텍스처(이전 프레임 결과)도 같은 크기로 보장
+		RecreatePrevStylizedIfNeeded(W, H);
+		mHasPrevStylized = false; // 새로 만들었으니 첫 프레임은 It로 대체
+
+	}
+	break;
+
+	case OnnxType::Sanet:
+	{
+		OnnxService::CreateOnnxResources_Sanet(
+			W, H,
+			*m_StyleObject.GetImage().get(),
+			m_Onnx.get(),
+			m_OnnxGPU.get(),
+			mHeapCPU.Get(),
+			mSceneColor.Get(),
+			mOnnxTexState,
+			mOnnxInputState);
+
+		// ★ Pt 텍스처(이전 프레임 결과)도 같은 크기로 보장
+		RecreatePrevStylizedIfNeeded(W, H);
+		mHasPrevStylized = false; // 새로 만들었으니 첫 프레임은 It로 대체
+
+	}
+	break;
+
 	default:
 		break;
 	}
@@ -698,6 +746,47 @@ void DirectXManager::RecordPreprocess(ID3D12GraphicsCommandList7* cmd)
 				*m_StyleObject.GetImage().get());
 		}
 		break;
+
+		case OnnxType::ReCoNet:
+		{
+			OnnxService::RecordPreprocess_ReCoNet(
+				cmd,
+				m_OnnxGPU->Heap.Get(),
+				m_Onnx.get(),
+				m_OnnxGPU.get(),
+				mSceneColor.Get(),
+				*m_StyleObject.GetImage().get());
+
+		}
+		break;
+
+		case OnnxType::BlindVideo:
+		{
+			ID3D12Resource2* pt = (mHasPrevStylized && mPrevStylized) ? mPrevStylized.Get() : mSceneColor.Get();
+
+			OnnxService::RecordPreprocess_BlindVideo(
+				cmd,
+				m_OnnxGPU->Heap.Get(),
+				m_Onnx.get(),
+				m_OnnxGPU.get(),
+				mSceneColor.Get(),   // It (현재 프레임)
+				pt                   // Pt (이전 프레임 결과, 없으면 It)
+			);
+		}
+		break;
+
+		case OnnxType::Sanet:
+		{
+			OnnxService::RecordPreprocess_Sanet(
+				cmd,
+				m_OnnxGPU->Heap.Get(),
+				*m_StyleObject.GetImage().get(),
+				m_Onnx.get(),
+				m_OnnxGPU.get(),
+				mSceneColor.Get()
+			);
+		}
+		break;
 	}
 }
 
@@ -719,6 +808,70 @@ void DirectXManager::RecordPostprocess(ID3D12GraphicsCommandList7* cmd)
 		case OnnxType::FastNeuralStyle:
 		{
 			OnnxService::RecordPostprocess_FastNeuralStyle(cmd, m_OnnxGPU->Heap.Get(), m_Onnx.get(), m_OnnxGPU.get(), mOnnxTexState);
+		}
+		break;
+
+		case OnnxType::ReCoNet:
+		{
+			OnnxService::RecordPostprocess_ReCoNet(cmd, m_OnnxGPU->Heap.Get(), m_Onnx.get(), m_OnnxGPU.get(), mOnnxTexState);
+		}
+		break;
+
+		case OnnxType::BlindVideo:
+		{
+			OnnxService::RecordPostprocess_BlindVideo(
+				cmd, m_OnnxGPU->Heap.Get(), m_Onnx.get(), m_OnnxGPU.get(), mOnnxTexState);
+
+			ID3D12Resource2* src = m_OnnxGPU->OnnxTex.Get();
+			if (src && mPrevStylized)
+			{
+				// ★ compute→copy 가시성 보장
+				{
+					auto uav = CD3DX12_RESOURCE_BARRIER::UAV(src);
+					cmd->ResourceBarrier(1, &uav);
+				}
+
+				if (mOnnxTexState != D3D12_RESOURCE_STATE_COPY_SOURCE) {
+					auto b = CD3DX12_RESOURCE_BARRIER::Transition(
+						src, mOnnxTexState, D3D12_RESOURCE_STATE_COPY_SOURCE);
+					cmd->ResourceBarrier(1, &b);
+					mOnnxTexState = D3D12_RESOURCE_STATE_COPY_SOURCE;
+				}
+
+				if (mPrevStylizedState != D3D12_RESOURCE_STATE_COPY_DEST) {
+					auto b = CD3DX12_RESOURCE_BARRIER::Transition(
+						mPrevStylized.Get(), mPrevStylizedState, D3D12_RESOURCE_STATE_COPY_DEST);
+					cmd->ResourceBarrier(1, &b);
+					mPrevStylizedState = D3D12_RESOURCE_STATE_COPY_DEST;
+				}
+
+				cmd->CopyResource(mPrevStylized.Get(), src);
+
+				{
+					auto b = CD3DX12_RESOURCE_BARRIER::Transition(
+						mPrevStylized.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
+						D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+					cmd->ResourceBarrier(1, &b);
+					mPrevStylizedState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+				}
+
+				// 화면 블릿을 위해 다시 PSR로
+				{
+					auto b = CD3DX12_RESOURCE_BARRIER::Transition(
+						src, D3D12_RESOURCE_STATE_COPY_SOURCE,
+						D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+					cmd->ResourceBarrier(1, &b);
+					mOnnxTexState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+				}
+
+				mHasPrevStylized = true;
+			}
+		}
+		break;
+
+		case OnnxType::Sanet:
+		{
+			OnnxService::RecordPostprocess_Sanet(cmd, m_OnnxGPU->Heap.Get(), m_Onnx.get(), m_OnnxGPU.get(), mOnnxTexState);
 		}
 		break;
 	}
@@ -996,7 +1149,12 @@ void DirectXManager::Debug_DumpBuffer(ID3D12Resource* src, const char* tag)
 	char buf2[512];
 	int k = (int)std::min<size_t>(16, n);
 	std::string first;
-	for (int i = 0; i < k; ++i) { char t[32]; sprintf_s(t, " %.5f", f[i]); first += t; }
+	for (int i = 0; i < k; ++i) 
+	{ 
+		char t[64]; 
+		sprintf_s(t, " %.5f", f[i]); 
+		first += t; 
+	}
 	sprintf_s(buf, "[%s] ", tag);
 	sprintf_s(buf2, "n=%llu  min=%.6f  max=%.6f  first16:%s\n", (unsigned long long)n, mn, mx, first.c_str());
 	OutputDebugStringA(buf);
@@ -1097,6 +1255,352 @@ void DirectXManager::DestroyDepth()
 	if (mDepth) { mDepth.Release(); }
 }
 
+void DirectXManager::Debug_FillOnnxTex(ID3D12GraphicsCommandList7* cmd)
+{
+	if (!m_Onnx || !m_OnnxGPU) return;
+
+	// OnnxTex → UAV 전이
+	if (mOnnxTexState != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
+		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
+			m_OnnxGPU->OnnxTex.Get(),
+			mOnnxTexState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+		cmd->ResourceBarrier(1, &b);
+		mOnnxTexState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+	}
+
+	// 디스크립터/RS/PSO 바인딩
+	ID3D12DescriptorHeap* heaps[] = { m_OnnxGPU->Heap.Get() };
+	cmd->SetDescriptorHeaps(1, heaps);
+	cmd->SetComputeRootSignature(m_Onnx->PreRS.Get());         // 기존 RS 재사용
+	cmd->SetPipelineState(m_DebugFillOnnxTexPSO.Get());        // 이전에 만든 PSO
+
+	// RS 슬롯: t-range(0)는 더미/아무거나, u-range(1)는 OnnxTex UAV
+	cmd->SetComputeRootDescriptorTable(0, m_OnnxGPU->DummySRV_GPU);
+	cmd->SetComputeRootDescriptorTable(1, m_OnnxGPU->OnnxTexUAV_GPU);
+	cmd->SetComputeRootConstantBufferView(2, m_OnnxGPU->CB->GetGPUVirtualAddress()); // 사용 안 해도 바인딩
+
+	const UINT TGX = 8, TGY = 8;
+	cmd->Dispatch((m_Onnx->Width + TGX - 1) / TGX,
+		(m_Onnx->Height + TGY - 1) / TGY, 1);
+
+	// UAV 가시성 + PSR로 전이(블릿용)
+	auto uav = CD3DX12_RESOURCE_BARRIER::UAV(m_OnnxGPU->OnnxTex.Get());
+	cmd->ResourceBarrier(1, &uav);
+
+	auto toPS = CD3DX12_RESOURCE_BARRIER::Transition(
+		m_OnnxGPU->OnnxTex.Get(),
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	cmd->ResourceBarrier(1, &toPS);
+	mOnnxTexState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+}
+
+void DirectXManager::Debug_ViewPreprocessCHW(ID3D12GraphicsCommandList7* cmd)
+{
+	if (!m_Onnx || !m_OnnxGPU) return;
+	ID3D12Resource* inBuf = DX_ONNX.GetInputBufferContent().Get();
+	if (!inBuf) return;
+
+	// (A) 실제 채널 수 계산 ( = bytes / (W*H*sizeof(float)) )
+	const UINT W = m_Onnx->Width, H = m_Onnx->Height;
+	const UINT64 bytes = inBuf->GetDesc().Width;
+	UINT realC = 0;
+	if (W > 0 && H > 0) realC = (UINT)(bytes / (UINT64(sizeof(float)) * W * H));
+	realC = std::min<UINT>(realC, 6u);       // 안전장치
+
+	// (B) SRV 갱신 (정확한 NumElements 사용)
+	D3D12_SHADER_RESOURCE_VIEW_DESC s{};
+	s.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	s.Format = DXGI_FORMAT_UNKNOWN;
+	s.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	s.Buffer.FirstElement = 0;
+	s.Buffer.NumElements = realC * W * H;    // ★ 실제 채널 수 반영
+	s.Buffer.StructureByteStride = sizeof(float);
+	s.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+	DX_CONTEXT.GetDevice()->CreateShaderResourceView(
+		inBuf, &s, m_OnnxGPU->ModelOutSRV_CPU);
+
+	// (C) InputBuffer: UAV→SRV (읽기)
+	auto toSRV = CD3DX12_RESOURCE_BARRIER::Transition(
+		inBuf, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+	cmd->ResourceBarrier(1, &toSRV);
+
+	// (D) OnnxTex 클리어(선택) + UAV로 전이
+	//     남은 영역에 이전 프레임이 남지 않게!
+	if (mOnnxTexState != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
+		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
+			m_OnnxGPU->OnnxTex.Get(), mOnnxTexState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+		cmd->ResourceBarrier(1, &b);
+		mOnnxTexState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+	}
+	// 간단 클리어(옵션): 0으로
+	// -> 필요하면 별도 ClearUAV(Structured) 도입. 여기선 스킵 가능.
+
+	// (E) CB 세팅 (타일 자동)
+	struct CBData {
+		UINT SrcW, SrcH, SrcC, Flags;
+		UINT DstW, DstH, TilesX, TilesY;   // ★ 변경
+		float Gain, Bias, _f0, _f1;
+	} cb{};
+	cb.SrcW = W; cb.SrcH = H; cb.SrcC = realC;
+	cb.DstW = W; cb.DstH = H;
+	cb.TilesX = (realC <= 3) ? 3 : 3;
+	cb.TilesY = (realC <= 3) ? 1 : 2;      // ★ 3채널이면 3x1, 6채널이면 3x2
+	cb.Gain = 1.0f; cb.Bias = 0.0f;        // [-1,1]이면 0.5/0.5로
+
+	void* p = nullptr;
+	m_OnnxGPU->CB->Map(0, nullptr, &p);
+	std::memcpy(p, &cb, sizeof(cb));
+	m_OnnxGPU->CB->Unmap(0, nullptr);
+
+	// (F) 바인딩 & 디스패치
+	ID3D12DescriptorHeap* heaps[] = { m_OnnxGPU->Heap.Get() };
+	cmd->SetDescriptorHeaps(1, heaps);
+	cmd->SetComputeRootSignature(m_Onnx->PreRS.Get());
+	cmd->SetPipelineState(m_DebugViewPreCHWPSO.Get());
+	cmd->SetComputeRootDescriptorTable(0, m_OnnxGPU->ModelOutSRV_GPU);  // t0..(t1 dummy)
+	cmd->SetComputeRootDescriptorTable(1, m_OnnxGPU->OnnxTexUAV_GPU);   // u0
+	cmd->SetComputeRootConstantBufferView(2, m_OnnxGPU->CB->GetGPUVirtualAddress());
+
+	const UINT TGX = 8, TGY = 8;
+	cmd->Dispatch((W + TGX - 1) / TGX, (H + TGY - 1) / TGY, 1);
+
+	// (G) UAV 가시성 + OnnxTex는 PSR로 (블릿)
+	auto uav = CD3DX12_RESOURCE_BARRIER::UAV(m_OnnxGPU->OnnxTex.Get());
+	cmd->ResourceBarrier(1, &uav);
+	auto toPS = CD3DX12_RESOURCE_BARRIER::Transition(
+		m_OnnxGPU->OnnxTex.Get(),
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	cmd->ResourceBarrier(1, &toPS);
+	mOnnxTexState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+
+	// (H) ★★ 중요: InputBuffer 상태 원복 (다음 프레임 전처리용)
+	auto backUAV = CD3DX12_RESOURCE_BARRIER::Transition(
+		inBuf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+	cmd->ResourceBarrier(1, &backUAV);
+}
+
+bool DirectXManager::CreateDebugFillOnnxTexPSO()
+{
+	ID3D12Device* dev = DX_CONTEXT.GetDevice();
+	if (!dev) return false;
+
+	// BlindVideo용 PreRS( SRV table, UAV table, CBV ) 이미 있음
+	if (!m_Onnx || !m_Onnx->PreRS) return false;
+
+	ComPointer<ID3DBlob> cs, err;
+	HRESULT hr = D3DCompileFromFile(
+		L"./Shaders/cs_debug_fill_onnxtex.hlsl",
+		nullptr, nullptr, "main", "cs_5_0",
+		0, 0, &cs, &err);
+
+	if (FAILED(hr) || !cs)
+	{
+		if (err) OutputDebugStringA((const char*)err->GetBufferPointer());
+		return false;
+	}
+
+	D3D12_COMPUTE_PIPELINE_STATE_DESC desc{};
+	desc.pRootSignature = m_Onnx->PreRS.Get(); // UAV(u0) 있는 RS 재사용
+	desc.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
+
+	hr = dev->CreateComputePipelineState(&desc, IID_PPV_ARGS(&m_DebugFillOnnxTexPSO));
+	if (FAILED(hr)) return false;
+
+	return true;
+}
+
+bool DirectXManager::CreateDebugViewPreCHWPSO()
+{
+	ID3D12Device* dev = DX_CONTEXT.GetDevice();
+	if (!m_Onnx || !m_Onnx->PreRS) return false; // PreRS 재사용 (t-range, u-range, CBV)
+
+	ComPointer<ID3DBlob> cs, err;
+	HRESULT hr = D3DCompileFromFile(
+		L"./Shaders/cs_debug_view_pre_chw.hlsl",
+		nullptr, nullptr, "main", "cs_5_0", 0, 0, &cs, &err);
+	if (FAILED(hr) || !cs) {
+		if (err) OutputDebugStringA((const char*)err->GetBufferPointer());
+		return false;
+	}
+
+	D3D12_COMPUTE_PIPELINE_STATE_DESC d{};
+	d.pRootSignature = m_Onnx->PreRS.Get();
+	d.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
+
+	return SUCCEEDED(dev->CreateComputePipelineState(&d, IID_PPV_ARGS(&m_DebugViewPreCHWPSO)));
+}
+
+void DirectXManager::RecreatePrevStylizedIfNeeded(UINT W, UINT H)
+{
+	ID3D12Device* dev = DX_CONTEXT.GetDevice();
+
+	bool need = true;
+	if (mPrevStylized) {
+		const auto d = mPrevStylized->GetDesc();
+		// 크기나 포맷이 다르면 재생성
+		need = (d.Width != W || d.Height != H || d.Format != DXGI_FORMAT_R16G16B16A16_FLOAT);
+	}
+	if (!need) return;
+
+	// 기존 리소스 정리
+	mPrevStylized.Release();
+	mPrevStylizedState = D3D12_RESOURCE_STATE_COMMON;
+	mHasPrevStylized = false;
+
+	// 새 리소스 생성 (전처리에서 SRV로 읽을 거라 NPSR로 시작)
+	D3D12_RESOURCE_DESC td{};
+	td.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	td.Width = W;
+	td.Height = H;
+	td.DepthOrArraySize = 1;
+	td.MipLevels = 1;
+	td.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+	td.SampleDesc = { 1, 0 };
+	td.Flags = D3D12_RESOURCE_FLAG_NONE; // SRV만 필요
+
+	CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
+	dev->CreateCommittedResource(
+		&hp, D3D12_HEAP_FLAG_NONE, &td,
+		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, // 전처리에서 읽기
+		nullptr, IID_PPV_ARGS(&mPrevStylized));
+
+	mPrevStylizedState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+}
+
+void DirectXManager::Debug_PostprocessOnly(ID3D12GraphicsCommandList7* cmd)
+{
+	if (!m_Onnx || !m_OnnxGPU) return;
+
+	// 디버그 CHW(=모델 출력 모사) 준비: srcW/H는 편의상 출력 해상도와 동일
+	const UINT srcW = m_Onnx->Width;
+	const UINT srcH = m_Onnx->Height;
+	EnsureDebugModelCHW(srcW, srcH); // ModelOutSRV(슬롯4)도 여기서 갱신됨
+
+	// OnnxTex → UAV 전이 (후처리 u0로 씀)
+	if (mOnnxTexState != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
+		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
+			m_OnnxGPU->OnnxTex.Get(),
+			mOnnxTexState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+		cmd->ResourceBarrier(1, &b);
+		mOnnxTexState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+	}
+
+	// CB 채우기 (후처리 HLSL과 동일한 레이아웃)
+	struct CBData {
+		UINT SrcW, SrcH, SrcC, Flags;
+		UINT DstW, DstH, _r1, _r2;
+		float Gain, Bias, _f0, _f1;
+	} cb{ srcW, srcH, 3, 0, m_Onnx->Width, m_Onnx->Height, 0,0, 1.0f, 0.0f, 0,0 };
+
+	void* p = nullptr;
+	m_OnnxGPU->CB->Map(0, nullptr, &p);
+	std::memcpy(p, &cb, sizeof(cb));
+	m_OnnxGPU->CB->Unmap(0, nullptr);
+
+	// 바인딩 & 디스패치 (후처리 PSO 사용)
+	ID3D12DescriptorHeap* heaps[] = { m_OnnxGPU->Heap.Get() };
+	cmd->SetDescriptorHeaps(1, heaps);
+	cmd->SetComputeRootSignature(m_Onnx->PreRS.Get());
+	cmd->SetPipelineState(m_Onnx->PostPSO.Get());
+
+	// SRV range base = ModelOutSRV (슬롯4). 바로 뒤 슬롯5에 DummySRV가 붙어 있음.
+	cmd->SetComputeRootDescriptorTable(0, m_OnnxGPU->ModelOutSRV_GPU); // t0..(t1 dummy)
+	cmd->SetComputeRootDescriptorTable(1, m_OnnxGPU->OnnxTexUAV_GPU);  // u0
+	cmd->SetComputeRootConstantBufferView(2, m_OnnxGPU->CB->GetGPUVirtualAddress());
+
+	const UINT TGX = 8, TGY = 8;
+	cmd->Dispatch((m_Onnx->Width + TGX - 1) / TGX,
+		(m_Onnx->Height + TGY - 1) / TGY, 1);
+
+	// UAV 가시성 + PSR 전이 (블릿용)
+	auto uav = CD3DX12_RESOURCE_BARRIER::UAV(m_OnnxGPU->OnnxTex.Get());
+	cmd->ResourceBarrier(1, &uav);
+
+	auto toPS = CD3DX12_RESOURCE_BARRIER::Transition(
+		m_OnnxGPU->OnnxTex.Get(),
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	cmd->ResourceBarrier(1, &toPS);
+	mOnnxTexState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+}
+
+void DirectXManager::EnsureDebugModelCHW(UINT w, UINT h)
+{
+	if (mDebugModel && mDebugSrcW == w && mDebugSrcH == h) return;
+
+	ID3D12Device* dev = DX_CONTEXT.GetDevice();
+	const size_t plane = size_t(w) * size_t(h);
+	const size_t num = plane * 3;          // C=3
+	const size_t bytes = num * sizeof(float);
+
+	// 1) DEFAULT 버퍼(Shader SRV로 읽힐 실제 소스)
+	CD3DX12_HEAP_PROPERTIES hpDef(D3D12_HEAP_TYPE_DEFAULT);
+	auto rd = CD3DX12_RESOURCE_DESC::Buffer(bytes);
+	(dev->CreateCommittedResource(
+		&hpDef, D3D12_HEAP_FLAG_NONE, &rd,
+		D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+		IID_PPV_ARGS(&mDebugModel)));
+
+	// 2) UPLOAD 버퍼(채워서 복사)
+	ComPointer<ID3D12Resource> upload;
+	CD3DX12_HEAP_PROPERTIES hpUp(D3D12_HEAP_TYPE_UPLOAD);
+	(dev->CreateCommittedResource(
+		&hpUp, D3D12_HEAP_FLAG_NONE, &rd,
+		D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+		IID_PPV_ARGS(&upload)));
+
+	// 3) CHW 데이터 채우기 (R=u, G=v, B=(u+v)/2)
+	{
+		void* p = nullptr;
+		D3D12_RANGE r{ 0,0 };
+		upload->Map(0, &r, &p);
+		float* f = reinterpret_cast<float*>(p);
+
+		for (UINT y = 0; y < h; ++y) {
+			for (UINT x = 0; x < w; ++x) {
+				const float u = (w > 1) ? float(x) / float(w - 1) : 0.0f;
+				const float v = (h > 1) ? float(y) / float(h - 1) : 0.0f;
+				const size_t idx = size_t(y) * size_t(w) + size_t(x);
+				f[0 * plane + idx] = u;               // R
+				f[1 * plane + idx] = v;               // G
+				f[2 * plane + idx] = 0.5f * (u + v);  // B
+			}
+		}
+		upload->Unmap(0, nullptr);
+	}
+
+	// 4) 복사 + 상태 전이(NPSR로)
+	{
+		ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
+		cmd->CopyBufferRegion(mDebugModel.Get(), 0, upload.Get(), 0, bytes);
+		auto toSRV = CD3DX12_RESOURCE_BARRIER::Transition(
+			mDebugModel.Get(),
+			D3D12_RESOURCE_STATE_COPY_DEST,
+			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+		cmd->ResourceBarrier(1, &toSRV);
+		DX_CONTEXT.ExecuteCommandList();
+	}
+
+	mDebugSrcW = w; mDebugSrcH = h;
+
+	// 5) ModelOut SRV(슬롯4) 갱신 (후처리 CS의 t0)
+	D3D12_SHADER_RESOURCE_VIEW_DESC s{};
+	s.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	s.Format = DXGI_FORMAT_UNKNOWN;
+	s.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	s.Buffer.FirstElement = 0;
+	s.Buffer.NumElements = UINT(num);
+	s.Buffer.StructureByteStride = sizeof(float);
+	s.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+
+	dev->CreateShaderResourceView(
+		mDebugModel.Get(), &s, m_OnnxGPU->ModelOutSRV_CPU);
+}
+
 
 void DirectXManager::ResizeOnnxResources(UINT W, UINT H)
 {
@@ -1130,19 +1634,25 @@ bool DirectXManager::CreateOnnxComputePipeline()
 {
 	ID3D12Device* device = DX_CONTEXT.GetDevice();
 
-	// 루트시그
-	CD3DX12_DESCRIPTOR_RANGE1 rangeSRV(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+	// RootSig: SRV range = BlindVideo면 2개(t0=It, t1=Pt), 그 외 1개
+	CD3DX12_DESCRIPTOR_RANGE1 rangeSRV(
+		D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+		2,
+		0 // t0 베이스
+	);
+
+	// UAV range: u0 하나(전처리 u0=Input, 후처리 u0=OnnxTex)
 	CD3DX12_DESCRIPTOR_RANGE1 rangeUAV(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
 
 	CD3DX12_ROOT_PARAMETER1 params[3];
-	params[0].InitAsDescriptorTable(1, &rangeSRV, D3D12_SHADER_VISIBILITY_ALL); // t0
+	params[0].InitAsDescriptorTable(1, &rangeSRV, D3D12_SHADER_VISIBILITY_ALL); // t0..t1
 	params[1].InitAsDescriptorTable(1, &rangeUAV, D3D12_SHADER_VISIBILITY_ALL); // u0
 	params[2].InitAsConstantBufferView(0);                                      // b0
 
 	D3D12_STATIC_SAMPLER_DESC samp{};
 	samp.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
 	samp.AddressU = samp.AddressV = samp.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-	samp.ShaderRegister = 0;
+	samp.ShaderRegister = 0; // s0
 
 	CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rsDesc;
 	rsDesc.Init_1_1(_countof(params), params, 1, &samp, D3D12_ROOT_SIGNATURE_FLAG_NONE);
@@ -1155,30 +1665,29 @@ bool DirectXManager::CreateOnnxComputePipeline()
 		IID_PPV_ARGS(&m_Onnx->PreRS));
 	if (FAILED(hr)) return false;
 
-	// 컴퓨트 셰이더 컴파일 (entry 이름 일치 확인: "main" 또는 "CSMain")
+	// CS compile
 	ComPointer<ID3DBlob> csPre, csPost;
-
-	hr = D3DCompileFromFile(L"./Shaders/cs_preprocess.hlsl", nullptr, nullptr,
-		"main", "cs_5_0", 0, 0, &csPre, &errBlob);
-	if (FAILED(hr) || !csPre) return false;
-
-	hr = D3DCompileFromFile(L"./Shaders/cs_postprocess.hlsl", nullptr, nullptr,
-		"main", "cs_5_0", 0, 0, &csPost, &errBlob);
+	hr = D3DCompileFromFile(L"./Shaders/cs_preprocess.hlsl", nullptr, nullptr, "main", "cs_5_0", 0, 0, &csPre, &errBlob);
+	if (FAILED(hr) || !csPre)  return false;
+	hr = D3DCompileFromFile(L"./Shaders/cs_postprocess.hlsl", nullptr, nullptr, "main", "cs_5_0", 0, 0, &csPost, &errBlob);
 	if (FAILED(hr) || !csPost) return false;
 
+	// PSO(pre)
 	D3D12_COMPUTE_PIPELINE_STATE_DESC preDesc{};
 	preDesc.pRootSignature = m_Onnx->PreRS.Get();
 	preDesc.CS = { csPre->GetBufferPointer(), csPre->GetBufferSize() };
 	hr = device->CreateComputePipelineState(&preDesc, IID_PPV_ARGS(&m_Onnx->PrePSO));
-	if (FAILED(hr)) return false;
+	if (FAILED(hr))
+	{
+		return false;
+	}
 
+	// PSO(post)  같은 RS 재사용
 	D3D12_COMPUTE_PIPELINE_STATE_DESC postDesc{};
-	postDesc.pRootSignature = m_Onnx->PreRS.Get(); // 같은 RS를 재사용
+	postDesc.pRootSignature = m_Onnx->PreRS.Get();
 	postDesc.CS = { csPost->GetBufferPointer(), csPost->GetBufferSize() };
-	hr = device->CreateComputePipelineState(&postDesc, IID_PPV_ARGS(&m_Onnx->PostPSO));
-	if (FAILED(hr)) return false;
+	if (FAILED(device->CreateComputePipelineState(&postDesc, IID_PPV_ARGS(&m_Onnx->PostPSO)))) return false;
 
-	
 	return true;
 }
 
@@ -1192,6 +1701,9 @@ void DirectXManager::Resize()
 	CreateFullscreenQuadVB(w, h);
 
 	ResizeOnnxResources(w, h);
+
+	RecreatePrevStylizedIfNeeded(w, h);
+	mHasPrevStylized = false;
 
 	mAspect = (h == 0) ? mAspect : (float)w / (float)h;
 	InitDepth(w, h);

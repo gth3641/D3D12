@@ -224,15 +224,38 @@ public:
     // === Ground geometry ===
     //bool InitGroundGeometry();
    // void RenderGround(ID3D12GraphicsCommandList7* cmd);
+
+    void Debug_FillOnnxTex(ID3D12GraphicsCommandList7* cmd);
+    void Debug_ViewPreprocessCHW(ID3D12GraphicsCommandList7* cmd);
+    bool CreateDebugFillOnnxTexPSO();
+    bool CreateDebugViewPreCHWPSO();
+    void RecreatePrevStylizedIfNeeded(UINT W, UINT H);
+    ComPointer<ID3D12Resource2> mPrevStylized = nullptr;
 private:
 
     Camera mCam;
+
+    D3D12_RESOURCE_STATES mPrevStylizedState = D3D12_RESOURCE_STATE_COMMON;
+    bool mHasPrevStylized = false;
+
+    ComPointer<ID3D12PipelineState> m_DebugFillOnnxTexPSO;
+    ComPointer<ID3D12PipelineState> m_DebugViewPreCHWPSO;
 
     //ComPointer<ID3D12Resource2>  mGroundVB;
     //ComPointer<ID3D12Resource2>  mGroundIB;
     //D3D12_VERTEX_BUFFER_VIEW     mGroundVBV{};
     //D3D12_INDEX_BUFFER_VIEW      mGroundIBV{};
     //UINT                         mGroundIndexCount = 0;
+
+public:
+    void Debug_PostprocessOnly(ID3D12GraphicsCommandList7* cmd);
+
+private:
+    void EnsureDebugModelCHW(UINT srcW, UINT srcH);
+
+    // 디버그용 모델출력(CHW) 버퍼
+    ComPointer<ID3D12Resource> mDebugModel;
+    UINT mDebugSrcW = 0, mDebugSrcH = 0;
 
 };
 

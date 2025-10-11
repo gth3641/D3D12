@@ -21,8 +21,12 @@
 
 #define USE_ONNX
 #define DEBUG_DUMP 0
+#define DEBUG_TIME 0
 
 #ifdef USE_ONNX
+
+static constexpr bool kDebugFillOnnxTex = false;		// 이전 단계: 텍스처 채우기
+static constexpr bool kDebugPostprocessOnly = false;		// 이번 단계: 후처리만 단독 검증
 
 int main()
 {
@@ -41,29 +45,10 @@ int main()
 		return -1;
 	}
 
-	//if (DX_ONNX.Init(L"./Resources/Onnx/udnie-9.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
-	//{
-	//	return -1;
-	//}
-	if (DX_ONNX.Init(L"./Resources/Onnx/adain_end2end.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
+	if (DX_ONNX.Init(OnnxType::Sanet, DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
 	{
 		return -1;
 	}
-
-	//if (DX_ONNX.Init(L"./Resources/Onnx/FHD/rain_princess_opset12_dyn.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
-	//{
-	//	return -1;
-	//}
-
-	if (DX_ONNX.Init(L"./Resources/Onnx/FHD/mosaic_opset12_dyn.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
-	{
-		return -1;
-	}
-
-	//if (DX_ONNX.Init(L"./Resources/Onnx/FHD/udnie_opset12_dyn.onnx", DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
-	//{
-	//	return -1;
-	//}
 
 	std::chrono::system_clock::time_point preTick = std::chrono::system_clock::now();
 	std::chrono::system_clock::time_point tick = preTick;
@@ -92,40 +77,86 @@ int main()
 			DX_MANAGER.RecordPreprocess(cmd);          
 			DX_CONTEXT.ExecuteCommandList();        
 
+			if(kDebugFillOnnxTex == true)
+			{
+				ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
+				DX_MANAGER.Debug_FillOnnxTex(cmd);         // ← OnnxTex UAV에 그라디언트 채우기
+				DX_MANAGER.BlitToBackbuffer(cmd);          // ← 화면으로 블릿
+				DX_CONTEXT.ExecuteCommandList();
+				DX_WINDOW.Present();
+				continue; // ONNX.Run / RecordPostprocess 건너뛰기
+			}
+
+#if DEBUG_TIME
 			endSecStart = std::chrono::system_clock::now() - startTime;
-			//Util::Print((float)endSecStart.count(), "ONNX START");
+			Util::Print((float)endSecStart.count(), "ONNX START");
+#endif
 #if DEBUG_DUMP
 			DX_MANAGER.Debug_DumpBuffer(DX_ONNX.GetInputBufferContent().Get(), "CONTENT");
+			DX_MANAGER.Debug_DumpBuffer(DX_MANAGER.mPrevStylized.Get(), "PRE STYLE");
 			DX_MANAGER.Debug_DumpBuffer(DX_ONNX.GetInputBufferStyle().Get(), "STYLE");
 #endif
 		}
 
+		if (kDebugPostprocessOnly)
+		{
+			ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
+			DX_MANAGER.Debug_PostprocessOnly(cmd);   // ← 후처리만 실행 (가짜 CHW 입력)
+			DX_MANAGER.BlitToBackbuffer(cmd);        // ← 결과 화면으로
+			DX_CONTEXT.ExecuteCommandList();
+			DX_WINDOW.Present();
+			continue; // ONNX.Run / RecordPostprocess 생략
+		}
 		
+
+		//{
+		//	// 3) 전처리 결과 시각화 (모자이크)
+		//	ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
+		//	DX_MANAGER.Debug_ViewPreprocessCHW(cmd);
+		//	DX_MANAGER.BlitToBackbuffer(cmd);
+		//	DX_CONTEXT.ExecuteCommandList();
+		//	DX_WINDOW.Present();
+		//	continue; // ONNX.Run / RecordPostprocess 생략
+
+		//}
+
 		DX_ONNX.Run();
+		//DX_CONTEXT.SignalAndWait();
+
+#if DEBUG_TIME
 		endSecStart = std::chrono::system_clock::now() - startTime;
-		//Util::Print((float)endSecStart.count(), "ONNX RUNNING");
+		Util::Print((float)endSecStart.count(), "ONNX RUNNING");
+#endif
 
 		{
 			ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
 			DX_MANAGER.RecordPostprocess(cmd);
 
-			//endSecStart = std::chrono::system_clock::now() - startTime;
-			//Util::Print((float)endSecStart.count(), "RecordPostprocess");
+#if DEBUG_TIME
+			endSecStart = std::chrono::system_clock::now() - startTime;
+			Util::Print((float)endSecStart.count(), "RecordPostprocess");
+#endif
 
 			DX_MANAGER.BlitToBackbuffer(cmd);
 
-			//endSecStart = std::chrono::system_clock::now() - startTime;
-			//Util::Print((float)endSecStart.count(), "BlitToBackbuffer");
+#if DEBUG_TIME
+			endSecStart = std::chrono::system_clock::now() - startTime;
+			Util::Print((float)endSecStart.count(), "BlitToBackbuffer");
+#endif
 
 			DX_CONTEXT.ExecuteCommandList();
 
-			//endSecStart = std::chrono::system_clock::now() - startTime;
-			//Util::Print((float)endSecStart.count(), "ExecuteCommandList");
+#if DEBUG_TIME
+			endSecStart = std::chrono::system_clock::now() - startTime;
+			Util::Print((float)endSecStart.count(), "ExecuteCommandList");
+#endif
 
 			DX_WINDOW.Present();
 
-			//endSecStart = std::chrono::system_clock::now() - startTime;
-			//Util::Print((float)endSecStart.count(), "ONNX END");
+#if DEBUG_TIME
+			endSecStart = std::chrono::system_clock::now() - startTime;
+			Util::Print((float)endSecStart.count(), "ONNX END");
+#endif
 		}
 	}
 

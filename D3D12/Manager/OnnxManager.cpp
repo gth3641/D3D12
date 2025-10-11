@@ -3,6 +3,9 @@
 #include "OnnxRunner/OnnxRunner_AdaIN.h"
 #include "OnnxRunner/OnnxRunner_Udnie.h"
 #include "OnnxRunner/OnnxRunner_FastNeuralStyle.h"
+#include "OnnxRunner/OnnxRunner_ReCoNet.h"
+#include "OnnxRunner/OnnxRunner_BlindVideo.h"
+#include "OnnxRunner/OnnxRunner_Sanet.h"
 
 bool OnnxManager::Init(const std::wstring& modelPath, ID3D12Device* dev, ID3D12CommandQueue* queue)
 {
@@ -13,6 +16,43 @@ bool OnnxManager::Init(const std::wstring& modelPath, ID3D12Device* dev, ID3D12C
     }
 
     return m_OnnxRunner->Init(modelPath, dev, queue);
+}
+
+bool OnnxManager::Init(OnnxType type, ID3D12Device* dev, ID3D12CommandQueue* queue)
+{
+    switch (type)
+	{
+	    case OnnxType::Udnie:
+        {
+		    return Init(L"./Resources/Onnx/udnie-9.onnx", dev, queue);
+        }
+	    case OnnxType::AdaIN:
+        {
+		    return Init(L"./Resources/Onnx/adain_end2end.onnx", dev, queue);
+        }
+	    case OnnxType::FastNeuralStyle:
+        {
+		    return Init(L"./Resources/Onnx/FHD/rain_princess_opset12_dyn.onnx", dev, queue);
+		    //return Init(L"./Resources/Onnx/FHD/mosaic_opset12_dyn.onnx", dev, queue);
+		    //return Init(L"./Resources/Onnx/FHD/udnie_opset12_dyn.onnx", dev, queue);
+        }
+	    case OnnxType::ReCoNet:
+        {
+		    return Init(L"./Resources/Onnx/reconet.onnx", dev, queue);
+        }
+	    case OnnxType::BlindVideo:
+        {
+		    return Init(L"./Resources/Onnx/stylize_blindvideo.onnx", dev, queue);
+        }
+	    case OnnxType::Sanet:
+        {
+		    return Init(L"./Resources/Onnx/sanet_pipeline_img_ms_dynsim.onnx", dev, queue);
+        }
+	    default:
+		    return false;
+	}
+
+    return false;
 }
 
 bool OnnxManager::PrepareIO(ID3D12Device* dev, UINT contentW, UINT contentH, UINT styleW, UINT styleH)
@@ -60,7 +100,22 @@ void OnnxManager::Shutdown()
 
 void OnnxManager::InitOnnxRunner(const std::wstring& modelPath, ID3D12Device* dev, ID3D12CommandQueue* queue)
 {
-    if (modelPath.find(L"dyn") != std::wstring::npos)
+    if (modelPath.find(L"sanet") != std::wstring::npos)
+    {
+        m_OnnxRunner = std::make_unique<OnnxRunner_Sanet>();
+        m_OnnxType = OnnxType::Sanet;
+    }
+    else if (modelPath.find(L"blind") != std::wstring::npos)
+    {
+        m_OnnxRunner = std::make_unique<OnnxRunner_BlindVideo>();
+        m_OnnxType = OnnxType::BlindVideo;
+    }
+    else if (modelPath.find(L"reconet") != std::wstring::npos)
+    {
+        m_OnnxRunner = std::make_unique<OnnxRunner_ReCoNet>();
+        m_OnnxType = OnnxType::ReCoNet;
+    }
+    else if (modelPath.find(L"dyn") != std::wstring::npos)
     {
         m_OnnxRunner = std::make_unique<OnnxRunner_FastNeuralStyle>();
         m_OnnxType = OnnxType::FastNeuralStyle;

@@ -55,13 +55,13 @@ void OnnxService_FastNeuralStyle::RecordPreprocess_FastNeuralStyle(
 		const auto& ish = DX_ONNX.GetInputShapeContent(); // [1,3,H,W]
 		inCc = (UINT)ish[1]; inHc = (UINT)ish[2]; inWc = (UINT)ish[3];
 
-		UINT flagsC = 0x100;
+		UINT flagsC = PRE_MUL_255;
 		auto fmtC = sceneColor->GetDesc().Format;
 		if (fmtC == DXGI_FORMAT_B8G8R8A8_UNORM || fmtC == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)
-			flagsC |= 0x10; // BGR 스왑
+			flagsC |= PRE_BGR_SWAP; // BGR 스왑
 
 		if (fmtC == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB || fmtC == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)
-			flagsC |= 0x1;
+			flagsC |= LINEAR_TO_SRGB;
 
 		struct CB { UINT W, H, C, Flags; } cb{ inWc, inHc, inCc, flagsC };
 		uint8_t* base = nullptr;
@@ -235,18 +235,18 @@ void OnnxService_FastNeuralStyle::CreateOnnxResources_FastNeuralStyle(UINT W, UI
 		d.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 		dev->CreateDescriptorHeap(&d, IID_PPV_ARGS(&onnxGPUResource->Heap));
 
-		D3D12_DESCRIPTOR_HEAP_DESC dCPU = d;
-		dCPU.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-		dev->CreateDescriptorHeap(&dCPU, IID_PPV_ARGS(&heapCPU));
+		//D3D12_DESCRIPTOR_HEAP_DESC dCPU = d;
+		//dCPU.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+		//dev->CreateDescriptorHeap(&dCPU, IID_PPV_ARGS(&heapCPU));
 	}
 
 	auto gpuStart = onnxGPUResource->Heap->GetGPUDescriptorHandleForHeapStart();
 	auto cpuGPU = onnxGPUResource->Heap->GetCPUDescriptorHandleForHeapStart();
-	auto cpuOnly = heapCPU->GetCPUDescriptorHandleForHeapStart();
+	//auto cpuOnly = heapCPU->GetCPUDescriptorHandleForHeapStart();
 	const UINT inc = dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	auto nthGPU = [&](UINT i) { auto h = gpuStart; h.ptr += i * inc; return h; };
 	auto nthCPU_GPU = [&](UINT i) { auto h = cpuGPU;  h.ptr += i * inc; return h; };
-	auto nthCPUONLY = [&](UINT i) { auto h = cpuOnly; h.ptr += i * inc; return h; };
+	//auto nthCPUONLY = [&](UINT i) { auto h = cpuOnly; h.ptr += i * inc; return h; };
 
 	// (0) Scene SRV
 	{

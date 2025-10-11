@@ -36,7 +36,7 @@ public:
 public: // Static & Override
   
 public: // Functions
-    bool Init(const std::wstring& modelPath, ID3D12Device* dev, ID3D12CommandQueue* queue);
+	bool Init(OnnxType type, ID3D12Device* dev, ID3D12CommandQueue* queue);
     bool PrepareIO(ID3D12Device* dev, UINT contentW, UINT contentH, UINT styleW, UINT styleH);
     bool PrepareIO(ID3D12Device* dev, UINT W, UINT H) { return PrepareIO(dev, W, H, W, H); }
     bool Run();
@@ -58,6 +58,7 @@ public: // Functions
 
 
 private:
+    bool Init(const std::wstring& modelPath, ID3D12Device* dev, ID3D12CommandQueue* queue);
 	void InitOnnxRunner(const std::wstring& modelPath, ID3D12Device* dev, ID3D12CommandQueue* queue);
 
 private:

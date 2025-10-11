@@ -14,5 +14,9 @@ public: // Functions
     virtual void AllocateOutputForShape(const std::vector<int64_t>& shape) override;
 
 protected:
+    std::unique_ptr<Ort::IoBinding> m_Binding; 
+    Ort::Value m_InTensorDML{ nullptr };       
+    Ort::Value m_OutTensorDML{ nullptr };      
+    bool m_OutputBound = false;                
 };
 

@@ -23,7 +23,6 @@ bool OnnxRunner_FastNeuralStyle::Init(const std::wstring& modelPath, ID3D12Devic
     m_So.SetIntraOpNumThreads(0);
     m_So.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
-    // DML EP attach
     Ort::ThrowOnError(Ort::GetApi().GetExecutionProviderApi("DML", ORT_API_VERSION,
         reinterpret_cast<const void**>(&m_DmlApi)));
     Ort::ThrowOnError(m_DmlApi->SessionOptionsAppendExecutionProvider_DML1(m_So, dml.Get(), m_Queue));
@@ -33,54 +32,44 @@ bool OnnxRunner_FastNeuralStyle::Init(const std::wstring& modelPath, ID3D12Devic
 
     Ort::AllocatorWithDefaultOptions alloc;
 
-    // === 입력은 정확히 1개여야 함
-    int inputCount = m_Session->GetInputCount();
-    if (inputCount != 1) {
-        throw std::runtime_error("FastNeuralStyle runner expects exactly ONE input tensor");
-    }
+    // 입력/출력 이름/shape 쿼리
     {
+        int inputCount = m_Session->GetInputCount();
+        if (inputCount != 1) throw std::runtime_error("FastNeuralStyle expects one input");
         auto inName0 = m_Session->GetInputNameAllocated(0, alloc);
         m_InNameContent = inName0.get();
-        auto info0 = m_Session->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo();
-        m_InShapeContent = info0.GetShape(); // 보통 [-1,3,-1,-1]
-    }
+        m_InShapeContent = m_Session->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
 
-    // === 출력도 1개
-    int outputCount = m_Session->GetOutputCount();
-    if (outputCount != 1) {
-        throw std::runtime_error("FastNeuralStyle runner expects exactly ONE output tensor");
-    }
-    {
+        int outputCount = m_Session->GetOutputCount();
+        if (outputCount != 1) throw std::runtime_error("FastNeuralStyle expects one output");
         auto outName0 = m_Session->GetOutputNameAllocated(0, alloc);
         m_OutName = outName0.get();
-        auto oinfo0 = m_Session->GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo();
-        m_OutShape = oinfo0.GetShape(); // 동적일 수 있음
+        m_OutShape = m_Session->GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
     }
+
+    // ★ 멤버 IoBinding 생성
+    m_Binding = std::make_unique<Ort::IoBinding>(*m_Session);
+
     return true;
 }
 
 bool OnnxRunner_FastNeuralStyle::PrepareIO(ID3D12Device* dev, UINT contentW, UINT contentH, UINT styleW, UINT styleH)
 {
-    // 1) 입력 shape 확정
-    auto inShapeContent = m_InShapeContent; // 예: [-1,3,-1,-1]
-    FillDynamicNCHW(inShapeContent, 1, 3, (int)contentH, (int)contentW);
+    // (권장) 4의 배수 정렬
+    const UINT W = (contentW / 4) * 4;
+    const UINT H = (contentH / 4) * 4;
 
-    // 2) 바이트 수
+    // 입력 shape 확정
+    auto inShapeContent = m_InShapeContent; // 보통 [-1,3,-1,-1]
+    FillDynamicNCHW(inShapeContent, 1, 3, (int)H, (int)W);
     m_InBytesContent = BytesOf(inShapeContent, sizeof(float));
     if (m_InBytesContent == 0) return false;
 
-    // 3) 기존 입력 리소스/할당 해제
+    // 이전 입력 자원 정리
     if (m_InAllocContent) { m_DmlApi->FreeGPUAllocation(m_InAllocContent); m_InAllocContent = nullptr; }
     m_InputBufContent.Release();
 
-    // (1입력 전용) 스타일 관련은 모두 정리하고 비움
-    if (m_InAllocStyle) { m_DmlApi->FreeGPUAllocation(m_InAllocStyle); m_InAllocStyle = nullptr; }
-    m_InputBufStyle.Release();
-    m_InBytesStyle = 0;
-    m_InShapeStyle.clear();
-    m_InNameStyle.clear();
-
-    // 4) 콘텐츠 입력 버퍼 생성
+    // 입력 버퍼 생성 (DEFAULT + UAV)
     CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
     auto rd = CD3DX12_RESOURCE_DESC::Buffer(m_InBytesContent, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
     THROW_IF_FAILED(dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd,
@@ -88,14 +77,26 @@ bool OnnxRunner_FastNeuralStyle::PrepareIO(ID3D12Device* dev, UINT contentW, UIN
     m_InputBufContent->SetName(L"ORT_Input_Content");
     Ort::ThrowOnError(m_DmlApi->CreateGPUAllocationFromD3DResource(m_InputBufContent.Get(), &m_InAllocContent));
 
-    // 5) 확정된 입력 shape 저장
+    // 입력 텐서(DML) 멤버 보관
     m_InShapeContent = std::move(inShapeContent);
+    m_InTensorDML = Ort::Value::CreateTensor(
+        miDml_, m_InAllocContent, m_InBytesContent,
+        m_InShapeContent.data(), m_InShapeContent.size(),
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
 
-    // 6) 출력은 다음 Run 1회차에서 할당
-    m_OutShape.clear();
+    // 출력 자원/상태 리셋
     if (m_OutAlloc) { m_DmlApi->FreeGPUAllocation(m_OutAlloc); m_OutAlloc = nullptr; }
     m_OutputBuf.Release();
     m_OutBytes = 0;
+    m_OutTensorDML = Ort::Value{ nullptr };
+    m_OutShape.clear();
+    m_OutputBound = false;
+
+    // ★ 멤버 IoBinding 재세팅: 입력 바인딩, 출력은 "발견 모드"
+    m_Binding->ClearBoundInputs();
+    m_Binding->ClearBoundOutputs();
+    m_Binding->BindInput(m_InNameContent.c_str(), m_InTensorDML);
+    m_Binding->BindOutput(m_OutName.c_str(), miDml_); // shape discovery용
 
     return true;
 }
@@ -108,43 +109,36 @@ bool OnnxRunner_FastNeuralStyle::Run()
             };
         if (m_InBytesContent != bytesOf(m_InShapeContent)) return false;
 
-        // 입력 텐서 생성 (GPU)
-        Ort::Value inContent = Ort::Value::CreateTensor(
-            miDml_, m_InAllocContent, m_InBytesContent,
-            m_InShapeContent.data(), m_InShapeContent.size(),
-            ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
+        // 1) 아직 출력이 바인딩되지 않았다면: 1회 shape discovery
+        if (!m_OutputBound) {
+            m_Session->Run(Ort::RunOptions{ nullptr }, *m_Binding); // 임시 출력에 실행
 
-        Ort::IoBinding io(*m_Session);
-        io.BindInput(m_InNameContent.c_str(), inContent);
-
-        // 1회차: 출력 미지정 → ORT가 shape 파악용 임시 출력 할당
-        if (!m_OutAlloc) {
-            io.BindOutput(m_OutName.c_str(), miDml_);
-            m_Session->Run(Ort::RunOptions{ nullptr }, io);
-
-            // shape 조회 후 내 출력 버퍼 생성
-            auto outs = io.GetOutputValues();
+            // shape 확인
+            auto outs = m_Binding->GetOutputValues();
             auto info = outs[0].GetTensorTypeAndShapeInfo();
-            auto shape = info.GetShape();   // [1,3,H,W]
-            AllocateOutputForShape(shape);
+            auto shape = info.GetShape(); // [1,3,H,W] 기대
 
-            // 재바인딩
-            io.ClearBoundInputs();
-            io.ClearBoundOutputs();
-            io.BindInput(m_InNameContent.c_str(), inContent);
+            // 내 출력 버퍼/텐서 준비
+            AllocateOutputForShape(shape);
+            m_OutTensorDML = Ort::Value::CreateTensor(
+                miDml_, m_OutAlloc, m_OutBytes,
+                m_OutShape.data(), m_OutShape.size(),
+                ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
+
+            // 멤버 바인딩을 "고정 바인딩"으로 전환
+            m_Binding->ClearBoundOutputs(); // 입력은 그대로 유지
+            m_Binding->BindOutput(m_OutName.c_str(), m_OutTensorDML);
+
+            m_OutputBound = true;
+
+            // 선택: 같은 프레임에 한 번 더 실행해 실제 출력까지 얻기
+            // (필요 없으면 이 호출을 생략해도 됨)
+            m_Session->Run(Ort::RunOptions{ nullptr }, *m_Binding);
+            return true;
         }
 
-        // 2회차: 내 출력 버퍼로 기록
-        Ort::Value outTensor = Ort::Value::CreateTensor(
-            miDml_, m_OutAlloc, m_OutBytes,
-            m_OutShape.data(), m_OutShape.size(),
-            ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
-        io.BindOutput(m_OutName.c_str(), outTensor);
-
-        m_Session->Run(Ort::RunOptions{ nullptr }, io);
-
-        io.ClearBoundInputs();
-        io.ClearBoundOutputs();
+        // 2) 출력까지 고정 바인딩이 끝났다면, 매 프레임은 그냥 Run만!
+        m_Session->Run(Ort::RunOptions{ nullptr }, *m_Binding);
         return true;
     }
     catch (const Ort::Exception& e) {
