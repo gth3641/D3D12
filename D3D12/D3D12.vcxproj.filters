@@ -16,6 +16,27 @@
     <Filter Include="소스 파일\Shader">
       <UniqueIdentifier>{7de21762-fc63-4ad4-8fd3-f4aeb672d792}</UniqueIdentifier>
     </Filter>
+    <Filter Include="소스 파일\Onnx">
+      <UniqueIdentifier>{cb11923c-da69-45ff-963b-30d705589aed}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="소스 파일\Onnx\Runner">
+      <UniqueIdentifier>{021bcd8c-f543-4f84-8a11-fb5de35976a0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="소스 파일\Onnx\Service">
+      <UniqueIdentifier>{a016544c-9d4a-4793-86fb-9a4e63e4dd23}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="헤더 파일\Onnx">
+      <UniqueIdentifier>{0050b70c-8c47-47dc-a4e4-ae9ed2127f7d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="헤더 파일\Onnx\Service">
+      <UniqueIdentifier>{8d5d425e-8236-4929-91b4-1ce94d73ddfd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="헤더 파일\Onnx\Runner">
+      <UniqueIdentifier>{6abb148a-fa02-4c11-8ee7-3ee7b1f00899}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="헤더 파일\Manager">
+      <UniqueIdentifier>{c6510cd9-5b7e-4923-98c3-7d0a5ee75ffd}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="D3D12.cpp">
@@ -54,29 +75,53 @@
     <ClCompile Include="Manager\OnnxManager.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="OnnxRunner\OnnxRunnerInterface.cpp">
+    <ClCompile Include="Manager\InputManager.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="Object\RenderingObject3D.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="OnnxRunner\OnnxRunner_AdaIN.cpp">
-      <Filter>소스 파일</Filter>
+      <Filter>소스 파일\Onnx\Runner</Filter>
     </ClCompile>
-    <ClCompile Include="OnnxRunner\OnnxRunner_Udnie.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="Support\Onnx\OnnxService.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="Support\Onnx\OnnxService_AdaIN.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="Support\Onnx\OnnxService_Udnie.cpp">
-      <Filter>소스 파일</Filter>
+    <ClCompile Include="OnnxRunner\OnnxRunner_BlindVideo.cpp">
+      <Filter>소스 파일\Onnx\Runner</Filter>
     </ClCompile>
     <ClCompile Include="OnnxRunner\OnnxRunner_FastNeuralStyle.cpp">
-      <Filter>소스 파일</Filter>
+      <Filter>소스 파일\Onnx\Runner</Filter>
+    </ClCompile>
+    <ClCompile Include="OnnxRunner\OnnxRunner_ReCoNet.cpp">
+      <Filter>소스 파일\Onnx\Runner</Filter>
+    </ClCompile>
+    <ClCompile Include="OnnxRunner\OnnxRunner_Udnie.cpp">
+      <Filter>소스 파일\Onnx\Runner</Filter>
+    </ClCompile>
+    <ClCompile Include="OnnxRunner\OnnxRunnerInterface.cpp">
+      <Filter>소스 파일\Onnx\Runner</Filter>
+    </ClCompile>
+    <ClCompile Include="Support\Onnx\OnnxService.cpp">
+      <Filter>소스 파일\Onnx\Service</Filter>
+    </ClCompile>
+    <ClCompile Include="Support\Onnx\OnnxService_AdaIN.cpp">
+      <Filter>소스 파일\Onnx\Service</Filter>
+    </ClCompile>
+    <ClCompile Include="Support\Onnx\OnnxService_BlindVideo.cpp">
+      <Filter>소스 파일\Onnx\Service</Filter>
     </ClCompile>
     <ClCompile Include="Support\Onnx\OnnxService_FastNeuralStyle.cpp">
-      <Filter>소스 파일</Filter>
+      <Filter>소스 파일\Onnx\Service</Filter>
+    </ClCompile>
+    <ClCompile Include="Support\Onnx\OnnxService_ReCoNet.cpp">
+      <Filter>소스 파일\Onnx\Service</Filter>
+    </ClCompile>
+    <ClCompile Include="Support\Onnx\OnnxService_Udnie.cpp">
+      <Filter>소스 파일\Onnx\Service</Filter>
+    </ClCompile>
+    <ClCompile Include="Support\Onnx\OnnxService_Sanet.cpp">
+      <Filter>소스 파일\Onnx\Service</Filter>
+    </ClCompile>
+    <ClCompile Include="OnnxRunner\OnnxRunner_Sanet.cpp">
+      <Filter>소스 파일\Onnx\Runner</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -104,9 +149,6 @@
     <ClInclude Include="Util\LoggingProvider.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="Manager\DirectXManager.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
     <ClInclude Include="Util\Util.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
@@ -119,38 +161,65 @@
     <ClInclude Include="Support\Image.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="Manager\ImageManager.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="Manager\OnnxManager.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="OnnxRunner\OnnxRunnerInterface.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="OnnxRunner\OnnxRunner_AdaIN.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="OnnxRunner\OnnxRunner_Udnie.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
     <ClInclude Include="Util\OnnxDefine.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="Support\Onnx\OnnxService.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="Support\Onnx\OnnxService_AdaIN.h">
+    <ClInclude Include="Object\RenderingObject3D.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="Support\Onnx\OnnxService_Udnie.h">
-      <Filter>헤더 파일</Filter>
+      <Filter>헤더 파일\Onnx\Service</Filter>
     </ClInclude>
-    <ClInclude Include="OnnxRunner\OnnxRunner_FastNeuralStyle.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="Support\Onnx\OnnxService.h">
+      <Filter>헤더 파일\Onnx\Service</Filter>
+    </ClInclude>
+    <ClInclude Include="Support\Onnx\OnnxService_AdaIN.h">
+      <Filter>헤더 파일\Onnx\Service</Filter>
+    </ClInclude>
+    <ClInclude Include="Support\Onnx\OnnxService_BlindVideo.h">
+      <Filter>헤더 파일\Onnx\Service</Filter>
     </ClInclude>
     <ClInclude Include="Support\Onnx\OnnxService_FastNeuralStyle.h">
-      <Filter>헤더 파일</Filter>
+      <Filter>헤더 파일\Onnx\Service</Filter>
+    </ClInclude>
+    <ClInclude Include="Support\Onnx\OnnxService_ReCoNet.h">
+      <Filter>헤더 파일\Onnx\Service</Filter>
+    </ClInclude>
+    <ClInclude Include="Support\Onnx\OnnxService_Sanet.h">
+      <Filter>헤더 파일\Onnx\Service</Filter>
+    </ClInclude>
+    <ClInclude Include="OnnxRunner\OnnxRunnerInterface.h">
+      <Filter>헤더 파일\Onnx\Runner</Filter>
+    </ClInclude>
+    <ClInclude Include="OnnxRunner\OnnxRunner_AdaIN.h">
+      <Filter>헤더 파일\Onnx\Runner</Filter>
+    </ClInclude>
+    <ClInclude Include="OnnxRunner\OnnxRunner_BlindVideo.h">
+      <Filter>헤더 파일\Onnx\Runner</Filter>
+    </ClInclude>
+    <ClInclude Include="OnnxRunner\OnnxRunner_FastNeuralStyle.h">
+      <Filter>헤더 파일\Onnx\Runner</Filter>
+    </ClInclude>
+    <ClInclude Include="OnnxRunner\OnnxRunner_ReCoNet.h">
+      <Filter>헤더 파일\Onnx\Runner</Filter>
+    </ClInclude>
+    <ClInclude Include="OnnxRunner\OnnxRunner_Udnie.h">
+      <Filter>헤더 파일\Onnx\Runner</Filter>
+    </ClInclude>
+    <ClInclude Include="Manager\ImageManager.h">
+      <Filter>헤더 파일\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="Manager\InputManager.h">
+      <Filter>헤더 파일\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="Manager\OnnxManager.h">
+      <Filter>헤더 파일\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="Manager\DirectXManager.h">
+      <Filter>헤더 파일\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="OnnxRunner\OnnxRunner_Sanet.h">
+      <Filter>헤더 파일\Onnx\Runner</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -190,10 +259,10 @@
     <FxCompile Include="Shaders\cs_copy_tex_to_tex2d.hlsl">
       <Filter>소스 파일\Shader</Filter>
     </FxCompile>
-    <FxCompile Include="Shaders\cs_debug_show_input.hlsl">
+    <FxCompile Include="Shaders\cs_debug_view_pre_chw.hlsl">
       <Filter>소스 파일\Shader</Filter>
     </FxCompile>
-    <FxCompile Include="Shaders\cs_fill_buffer.hlsl">
+    <FxCompile Include="Shaders\cs_debug_fill_onnxtex.hlsl">
       <Filter>소스 파일\Shader</Filter>
     </FxCompile>
   </ItemGroup>
@@ -202,6 +271,12 @@
       <Filter>소스 파일\Shader</Filter>
     </None>
     <None Include="packages.config" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime_providers_shared.dll" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime_providers_shared.dll" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime_providers_shared.dll" />
     <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />
     <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime_providers_shared.dll" />
     <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />

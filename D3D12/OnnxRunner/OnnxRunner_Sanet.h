@@ -2,7 +2,7 @@
 
 #include "OnnxRunnerInterface.h"
 
-class OnnxRunner_FastNeuralStyle : public OnnxRunnerInterface
+class OnnxRunner_Sanet : public OnnxRunnerInterface
 {
 
 public: // Functions
@@ -13,10 +13,16 @@ public: // Functions
     virtual void Shutdown() override;
     virtual void AllocateOutputForShape(const std::vector<int64_t>& shape) override;
 
+    // ▲ 추가: SANet 2-입력 지원 확인/게터
+    bool HasTwoInputs() const { return m_TwoInputs; }
+
 protected:
     std::unique_ptr<Ort::IoBinding> m_Binding; 
     Ort::Value m_InTensorDML{ nullptr };       
     Ort::Value m_OutTensorDML{ nullptr };      
-    bool m_OutputBound = false;                
+    bool m_OutputBound = false;            
+
+    Ort::Value m_InTensorDMLStyle;
+    bool m_TwoInputs = false; // ▲ 추가
 };
 

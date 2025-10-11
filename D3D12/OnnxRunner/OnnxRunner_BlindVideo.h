@@ -2,7 +2,7 @@
 
 #include "OnnxRunnerInterface.h"
 
-class OnnxRunner_FastNeuralStyle : public OnnxRunnerInterface
+class OnnxRunner_BlindVideo : public OnnxRunnerInterface
 {
 
 public: // Functions

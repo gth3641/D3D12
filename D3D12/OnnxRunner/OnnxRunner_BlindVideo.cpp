@@ -1,4 +1,4 @@
-#include "OnnxRunner_FastNeuralStyle.h"
+#include "OnnxRunner_BlindVideo.h"
 #include "D3D/DXContext.h"
 
 #include "d3dx12.h"
@@ -10,7 +10,7 @@
 #endif
 
 
-bool OnnxRunner_FastNeuralStyle::Init(const std::wstring& modelPath, ID3D12Device* dev, ID3D12CommandQueue* queue)
+bool OnnxRunner_BlindVideo::Init(const std::wstring& modelPath, ID3D12Device* dev, ID3D12CommandQueue* queue)
 {
     m_Dev = dev; m_Queue = queue;
 
@@ -30,38 +30,37 @@ bool OnnxRunner_FastNeuralStyle::Init(const std::wstring& modelPath, ID3D12Devic
     m_Session = std::make_unique<Ort::Session>(m_Env, modelPath.c_str(), m_So);
     miDml_ = Ort::MemoryInfo("DML", OrtAllocatorType::OrtDeviceAllocator, 0, OrtMemTypeDefault);
 
-    Ort::AllocatorWithDefaultOptions alloc;
-
     // 입력/출력 이름/shape 쿼리
     {
         int inputCount = m_Session->GetInputCount();
-        if (inputCount != 1) throw std::runtime_error("FastNeuralStyle expects one input");
+        if (inputCount != 1) throw std::runtime_error("BlindVideo expects exactly ONE input");
+
+        Ort::AllocatorWithDefaultOptions alloc;
         auto inName0 = m_Session->GetInputNameAllocated(0, alloc);
         m_InNameContent = inName0.get();
-        m_InShapeContent = m_Session->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
+        m_InShapeContent = m_Session->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape(); // [-1,6,-1,-1] 권장
+        if (m_InShapeContent.size() == 4 && m_InShapeContent[1] > 0 && m_InShapeContent[1] != 6)
+            throw std::runtime_error("BlindVideo ONNX expects C=6 (It+Pt). Re-export the model or fix preproc.");
 
         int outputCount = m_Session->GetOutputCount();
-        if (outputCount != 1) throw std::runtime_error("FastNeuralStyle expects one output");
+        if (outputCount != 1) throw std::runtime_error("BlindVideo expects exactly ONE output");
         auto outName0 = m_Session->GetOutputNameAllocated(0, alloc);
         m_OutName = outName0.get();
-        m_OutShape = m_Session->GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
+        m_OutShape = m_Session->GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape(); // [-1,3,-1,-1] 권장
     }
 
-    // ★ 멤버 IoBinding 생성
+    // 멤버 IoBinding
     m_Binding = std::make_unique<Ort::IoBinding>(*m_Session);
-
     return true;
 }
 
-bool OnnxRunner_FastNeuralStyle::PrepareIO(ID3D12Device* dev, UINT contentW, UINT contentH, UINT styleW, UINT styleH)
+bool OnnxRunner_BlindVideo::PrepareIO(ID3D12Device* dev, UINT contentW, UINT contentH, UINT styleW, UINT styleH)
 {
-    // (권장) 4의 배수 정렬
     const UINT W = (contentW / 4) * 4;
     const UINT H = (contentH / 4) * 4;
 
-    // 입력 shape 확정
-    auto inShapeContent = m_InShapeContent; // 보통 [-1,3,-1,-1]
-    FillDynamicNCHW(inShapeContent, 1, 3, (int)H, (int)W);
+    auto inShapeContent = m_InShapeContent; // 보통 [-1,6,-1,-1] 또는 [-1,-1,-1,-1]
+    FillDynamicNCHW(inShapeContent, 1, /*C=*/6, (int)H, (int)W);   // ★ C=6
     m_InBytesContent = BytesOf(inShapeContent, sizeof(float));
     if (m_InBytesContent == 0) return false;
 
@@ -101,7 +100,7 @@ bool OnnxRunner_FastNeuralStyle::PrepareIO(ID3D12Device* dev, UINT contentW, UIN
     return true;
 }
 
-bool OnnxRunner_FastNeuralStyle::Run()
+bool OnnxRunner_BlindVideo::Run()
 {
     try {
         auto bytesOf = [](const std::vector<int64_t>& s) {
@@ -150,7 +149,7 @@ bool OnnxRunner_FastNeuralStyle::Run()
     }
 }
 
-void OnnxRunner_FastNeuralStyle::ResizeIO(ID3D12Device* dev, UINT contentW, UINT contentH, UINT styleW, UINT styleH)
+void OnnxRunner_BlindVideo::ResizeIO(ID3D12Device* dev, UINT contentW, UINT contentH, UINT styleW, UINT styleH)
 {
     if (m_InAllocContent) { m_DmlApi->FreeGPUAllocation(m_InAllocContent); m_InAllocContent = nullptr; }
     if (m_OutAlloc) { m_DmlApi->FreeGPUAllocation(m_OutAlloc);       m_OutAlloc = nullptr; }
@@ -168,7 +167,7 @@ void OnnxRunner_FastNeuralStyle::ResizeIO(ID3D12Device* dev, UINT contentW, UINT
     PrepareIO(dev, contentW, contentH, 0, 0);
 }
 
-void OnnxRunner_FastNeuralStyle::Shutdown()
+void OnnxRunner_BlindVideo::Shutdown()
 {
     if (m_InAllocContent) { m_DmlApi->FreeGPUAllocation(m_InAllocContent); m_InAllocContent = nullptr; }
     if (m_OutAlloc) { m_DmlApi->FreeGPUAllocation(m_OutAlloc);       m_OutAlloc = nullptr; }
@@ -186,11 +185,11 @@ void OnnxRunner_FastNeuralStyle::Shutdown()
     m_Session.reset();
 }
 
-void OnnxRunner_FastNeuralStyle::AllocateOutputForShape(const std::vector<int64_t>& shape)
+void OnnxRunner_BlindVideo::AllocateOutputForShape(const std::vector<int64_t>& shape)
 {
     // shape = [1,3,H_out,W_out]  (런타임이 준 '진짜' 크기)
-    if (shape.size() != 4 || shape[0] != 1 || shape[1] != 3)
-        throw std::runtime_error("Unexpected output shape");
+    if (shape.size() != 4 || shape[0] != 1 || (shape[1] != 3 && shape[1] != 6))
+        throw std::runtime_error("Unexpected output shape for BlindVideo");
 
     m_OutShape = shape;
 

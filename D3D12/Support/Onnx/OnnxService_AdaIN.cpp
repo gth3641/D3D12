@@ -59,7 +59,7 @@ void OnnxService_AdaIN::RecordPreprocess_AdaIN(
 		UINT flagsC = 0;
 		auto fmtC = sceneColor->GetDesc().Format;
 		if (fmtC == DXGI_FORMAT_B8G8R8A8_UNORM || fmtC == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)
-			flagsC |= 0x10; // BGR swap
+			flagsC |= PRE_BGR_SWAP; // BGR swap
 
 		struct CB { UINT W, H, C, Flags; } cb{ inWc, inHc, inCc, flagsC };
 		uint8_t* base = nullptr;
@@ -114,7 +114,7 @@ void OnnxService_AdaIN::RecordPreprocess_AdaIN(
 		UINT flags = 0;
 		auto fmt = styleImage.GetTextureData().giPixelFormat;
 		if (fmt == DXGI_FORMAT_B8G8R8A8_UNORM || fmt == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)
-			flags |= 0x10;
+			flags |= PRE_BGR_SWAP;
 
 		struct CB { UINT W, H, C, Flags; } cb{ inWs, inHs, inCs, flags };
 		uint8_t* base = nullptr;
