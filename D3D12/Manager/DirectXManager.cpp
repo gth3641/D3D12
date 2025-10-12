@@ -620,6 +620,8 @@ void DirectXManager::CreateOnnxResources(UINT W, UINT H)
 			);
 		break;
 	}
+
+	case OnnxType::WCT2:
 	case OnnxType::AdaIN:
 	{
 		OnnxService::CreateOnnxResources_AdaIN(
@@ -648,6 +650,7 @@ void DirectXManager::CreateOnnxResources(UINT W, UINT H)
 	}
 	break;
 
+	case OnnxType::MsgNet:
 	case OnnxType::ReCoNet:
 	{
 		OnnxService::CreateOnnxResources_ReCoNet(
@@ -700,6 +703,11 @@ void DirectXManager::CreateOnnxResources(UINT W, UINT H)
 	}
 	break;
 
+
+
+
+
+
 	default:
 		break;
 	}
@@ -723,6 +731,7 @@ void DirectXManager::RecordPreprocess(ID3D12GraphicsCommandList7* cmd)
 		}
 		break;
 
+		case OnnxType::WCT2:
 		case OnnxType::AdaIN:
 		{
 			OnnxService::RecordPreprocess_AdaIN(
@@ -747,6 +756,7 @@ void DirectXManager::RecordPreprocess(ID3D12GraphicsCommandList7* cmd)
 		}
 		break;
 
+		case OnnxType::MsgNet:
 		case OnnxType::ReCoNet:
 		{
 			OnnxService::RecordPreprocess_ReCoNet(
@@ -787,6 +797,9 @@ void DirectXManager::RecordPreprocess(ID3D12GraphicsCommandList7* cmd)
 			);
 		}
 		break;
+
+
+
 	}
 }
 
@@ -799,6 +812,8 @@ void DirectXManager::RecordPostprocess(ID3D12GraphicsCommandList7* cmd)
 			OnnxService::RecordPostprocess_Udnie(cmd, m_OnnxGPU->Heap.Get(), m_Onnx.get(), m_OnnxGPU.get(), mOnnxTexState);
 		}
 		break;
+
+		case OnnxType::WCT2:
 		case OnnxType::AdaIN:
 		{
 			OnnxService::RecordPostprocess_AdaIN(cmd, m_OnnxGPU->Heap.Get(), m_Onnx.get(), m_OnnxGPU.get(), mOnnxTexState);
@@ -811,6 +826,7 @@ void DirectXManager::RecordPostprocess(ID3D12GraphicsCommandList7* cmd)
 		}
 		break;
 
+		case OnnxType::MsgNet:
 		case OnnxType::ReCoNet:
 		{
 			OnnxService::RecordPostprocess_ReCoNet(cmd, m_OnnxGPU->Heap.Get(), m_Onnx.get(), m_OnnxGPU.get(), mOnnxTexState);

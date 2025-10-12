@@ -26,6 +26,10 @@ bool OnnxManager::Init(OnnxType type, ID3D12Device* dev, ID3D12CommandQueue* que
         {
 		    return Init(L"./Resources/Onnx/udnie-9.onnx", dev, queue);
         }
+	    case OnnxType::WCT2:
+        {
+		    return Init(L"./Resources/Onnx/WCT2_dynamic.onnx", dev, queue);
+        }
 	    case OnnxType::AdaIN:
         {
 		    return Init(L"./Resources/Onnx/adain_end2end.onnx", dev, queue);
@@ -46,8 +50,19 @@ bool OnnxManager::Init(OnnxType type, ID3D12Device* dev, ID3D12CommandQueue* que
         }
 	    case OnnxType::Sanet:
         {
+            //https://github.com/dypark86/SANET
 		    return Init(L"./Resources/Onnx/sanet_pipeline_img_ms_dynsim.onnx", dev, queue);
         }
+        case OnnxType::AdaAttN:
+        {
+            return Init(L"./Resources/Onnx/adaattn_img_512.onnx", dev, queue);
+		}
+
+        case OnnxType::MsgNet:
+        {
+            return Init(L"./Resources/Onnx/msgnet_content_only.onnx", dev, queue);
+        }
+
 	    default:
 		    return false;
 	}
@@ -102,8 +117,18 @@ void OnnxManager::InitOnnxRunner(const std::wstring& modelPath, ID3D12Device* de
 {
     if (modelPath.find(L"sanet") != std::wstring::npos)
     {
-        m_OnnxRunner = std::make_unique<OnnxRunner_Sanet>();
-        m_OnnxType = OnnxType::Sanet;
+        m_OnnxRunner = std::make_unique<OnnxRunner_AdaIN>();
+        m_OnnxType = OnnxType::AdaIN;
+    }
+    else if (modelPath.find(L"WCT") != std::wstring::npos)
+    {
+        m_OnnxRunner = std::make_unique<OnnxRunner_AdaIN>();
+        m_OnnxType = OnnxType::AdaIN;
+    }
+    else if (modelPath.find(L"msg") != std::wstring::npos)
+    {
+        m_OnnxRunner = std::make_unique<OnnxRunner_ReCoNet>();
+        m_OnnxType = OnnxType::MsgNet;
     }
     else if (modelPath.find(L"blind") != std::wstring::npos)
     {
@@ -114,6 +139,11 @@ void OnnxManager::InitOnnxRunner(const std::wstring& modelPath, ID3D12Device* de
     {
         m_OnnxRunner = std::make_unique<OnnxRunner_ReCoNet>();
         m_OnnxType = OnnxType::ReCoNet;
+    }
+    else if (modelPath.find(L"adaattn") != std::wstring::npos)
+    {
+        m_OnnxRunner = std::make_unique<OnnxRunner_AdaIN>();
+        m_OnnxType = OnnxType::AdaIN;
     }
     else if (modelPath.find(L"dyn") != std::wstring::npos)
     {

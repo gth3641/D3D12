@@ -57,10 +57,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
         rgb = float3(r, g, b) / 255.0;
     }
     
-    rgb = rgb * Gain + Bias;
-    
     gDst[dtid.xy] = float4(saturate(rgb), 1);
-    //gDst[dtid.xy] = float4(0.25, 0.25, 0.25, 1);
 }
 
 

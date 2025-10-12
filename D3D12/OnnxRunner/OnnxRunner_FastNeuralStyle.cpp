@@ -47,7 +47,7 @@ bool OnnxRunner_FastNeuralStyle::Init(const std::wstring& modelPath, ID3D12Devic
         m_OutShape = m_Session->GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
     }
 
-    // ≮ 糕滚 IoBinding 积己
+    // 糕滚 IoBinding 积己
     m_Binding = std::make_unique<Ort::IoBinding>(*m_Session);
 
     return true;

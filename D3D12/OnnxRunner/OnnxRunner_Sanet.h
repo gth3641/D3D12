@@ -24,5 +24,8 @@ protected:
 
     Ort::Value m_InTensorDMLStyle;
     bool m_TwoInputs = false; // ¡ã Ãß°¡
+
+    Ort::Value m_InTensorContentDML{ nullptr };
+    Ort::Value m_InTensorStyleDML{ nullptr };
 };
 

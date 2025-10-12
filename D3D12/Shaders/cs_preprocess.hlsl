@@ -51,13 +51,13 @@ void main(uint3 id : SV_DispatchThreadID)
 
     float2 uv = (float2(id.x + 0.5, id.y + 0.5) / float2(W, H));
     float3 rgb = Src.SampleLevel(Smp, uv, 0).rgb;
-    float3 preRgb = PreSrc.SampleLevel(Smp, uv, 0).rgb;
+    float3 preRgb;
+    if (C >= 6)
+        preRgb = PreSrc.SampleLevel(Smp, uv, 0).rgb;
     
-    // 1) 샘플 (텍셀 좌표로 정확히)
     //float3 it = Src.Load(int3(id.xy, 0)).rgb;
     //float3 pt = PreSrc.Load(int3(id.xy, 0)).rgb;
     
-        // 2) 채널 스왑 (필요한 경우만 1회)
     if (Flags & PRE_BGR_SWAP)
     {
         rgb = rgb.bgr;
