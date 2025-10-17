@@ -1,7 +1,6 @@
 #pragma once
 #include "Support/WinInclude.h"
 #include "Support/ComPointer.h"
-//#include "Support/Window.h"
 #include "d3dx12.h"
 #include "d3d12.h"
 #include <d3dcompiler.h>
@@ -28,11 +27,11 @@ public:
     // 1) 오프스크린 씬 텍스처 (RTV+SRV)
     ComPointer<ID3D12Resource> SceneTex;
     D3D12_CPU_DESCRIPTOR_HANDLE SceneRTV{};
-    D3D12_CPU_DESCRIPTOR_HANDLE OnnxResultRTV{}; // 옵션(후처리용)
-    D3D12_GPU_DESCRIPTOR_HANDLE SceneSRV{};      // 전처리 입력
+    D3D12_CPU_DESCRIPTOR_HANDLE OnnxResultRTV{}; 
+    D3D12_GPU_DESCRIPTOR_HANDLE SceneSRV{};    
 
     // 2) 결과 뿌릴 텍스처 (UAV+SRV)
-    ComPointer<ID3D12Resource> OnnxTex; // 최종 화면용 RGBA8
+    ComPointer<ID3D12Resource> OnnxTex; 
     D3D12_GPU_DESCRIPTOR_HANDLE OnnxTexUAV{};
     D3D12_GPU_DESCRIPTOR_HANDLE OnnxTexSRV{};
 

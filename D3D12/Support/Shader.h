@@ -7,6 +7,20 @@
 #include <string_view>
 #include <fstream> 
 
+struct PreCBData
+{
+	UINT W, H, C, Flags;
+	UINT _pad0, _pad1, _pad2, _pad3;
+};
+
+struct PostCBData 
+{
+	UINT SrcW, SrcH, SrcC, Flags;
+	UINT DstW, DstH, _r1, _r2;
+	float Gain, Bias, _pad0, _pad1;
+};
+
+
 class Shader
 {
 public:

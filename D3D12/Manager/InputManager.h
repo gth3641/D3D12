@@ -6,10 +6,6 @@
 #define DX_INPUT InputManager::Get()
 #define KEY_MAX 256
 
-
-
-
-
 class InputManager
 {
 public: // Singleton pattern to ensure only one instance exists 
@@ -24,8 +20,6 @@ public: // Singleton pattern to ensure only one instance exists
 
 public:
     InputManager() = default;
-
-
 
 public: // Functions
     bool Init();
@@ -44,10 +38,6 @@ public: // Functions
     void setKeyDown(int key, bool state) { _keyDown.set(key, state); }
 
     void SetMouseLock();
-
-
-    //=================Getter=======================//
-    //==============================================//
 
     template<class T, class P>
     void AddDelegate(int vertualKey,T* object, P pred)

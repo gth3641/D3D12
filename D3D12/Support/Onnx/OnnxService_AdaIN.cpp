@@ -1,8 +1,11 @@
 #include "OnnxService_AdaIN.h"
 #include "Util/OnnxDefine.h"
+
 #include "Manager/OnnxManager.h"
 #include "Manager/DirectXManager.h"
+
 #include "Support/Image.h"
+#include "Support/Shader.h"
 
 
 static void WriteSceneSRVToSlot0(ID3D12Resource2* sceneColor, OnnxGPUResources* onnxGPUResource)
@@ -61,7 +64,12 @@ void OnnxService_AdaIN::RecordPreprocess_AdaIN(
 		if (fmtC == DXGI_FORMAT_B8G8R8A8_UNORM || fmtC == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)
 			flagsC |= PRE_BGR_SWAP; // BGR swap
 
-		struct CB { UINT W, H, C, Flags; } cb{ inWc, inHc, inCc, flagsC };
+		PreCBData cb
+		{ 
+			inWc, inHc, inCc, flagsC,
+			0, 0, 0, 0
+		};
+
 		uint8_t* base = nullptr;
 		onnxGPUResource->CB->Map(0, nullptr, (void**)&base);
 		memcpy(base + 0, &cb, sizeof(cb));
@@ -106,17 +114,16 @@ void OnnxService_AdaIN::RecordPreprocess_AdaIN(
 			}
 		}
 
-		/*char dbg[256];
-		sprintf_s(dbg, "[STYLE DISPATCH] W=%u H=%u C=%u (tex=%llu x %u)\n",
-			inWs, inHs, inCs, (unsigned long long)sDesc.Width, sDesc.Height);
-		OutputDebugStringA(dbg);*/
-
 		UINT flags = 0;
 		auto fmt = styleImage.GetTextureData().giPixelFormat;
 		if (fmt == DXGI_FORMAT_B8G8R8A8_UNORM || fmt == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)
 			flags |= PRE_BGR_SWAP;
 
-		struct CB { UINT W, H, C, Flags; } cb{ inWs, inHs, inCs, flags };
+		PreCBData cb
+		{ 
+			inWs, inHs, inCs, flags,
+			0, 0, 0, 0
+		};
 		uint8_t* base = nullptr;
 		onnxGPUResource->CB->Map(0, nullptr, (void**)&base);
 		memcpy(base + Slice, &cb, sizeof(cb));
@@ -211,26 +218,28 @@ void OnnxService_AdaIN::RecordPostprocess_AdaIN(
 	const UINT dstW = onnxResource->Width;
 	const UINT dstH = onnxResource->Height;
 
-	struct CBData {
-		UINT SrcW, SrcH, SrcC, _r0;
-		UINT DstW, DstH, _r1, _r2;
-		float Gain, Bias, _f0, _f1;
-	};
-	CBData cb{ srcW, srcH, srcC, 0, dstW, dstH, 0, 0, 1.0f, 0.0f, 0, 0 }; // ★ 먼저 크게
+	UINT Flags = 0;
+	if (DX_ONNX.GetOnnxType() == OnnxType::Sanet)
+	{
+		Flags |= 0x1;
+	}
+
+	PostCBData cb
+	{
+		srcW, srcH, srcC, Flags,
+		dstW, dstH, 0, 0, 
+		1.0f, 0.0f, 0, 0 
+	}; 
 
 	void* p = nullptr;
 	onnxGPUResource->CB->Map(0, nullptr, &p); std::memcpy(p, &cb, sizeof(cb)); onnxGPUResource->CB->Unmap(0, nullptr);
 	cmd->SetComputeRootConstantBufferView(2, onnxGPUResource->CB->GetGPUVirtualAddress());
-
-	// 5) 바인딩: t0=ModelOut SRV, u0=OnnxTex UAV
 	cmd->SetComputeRootDescriptorTable(0, onnxGPUResource->ModelOutSRV_GPU);
 	cmd->SetComputeRootDescriptorTable(1, onnxGPUResource->OnnxTexUAV_GPU);
 
-	// 6) 디스패치
 	const UINT TGX = 8, TGY = 8;
 	cmd->Dispatch((dstW + TGX - 1) / TGX, (dstH + TGY - 1) / TGY, 1);
 
-	// 7) 상태 원복: Output -> UAV, OnnxTex -> PSR
 	{
 		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
 			DX_ONNX.GetOutputBuffer().Get(),
@@ -260,21 +269,17 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 	D3D12_RESOURCE_STATES& mOnnxInputState
 )
 {
-	// ★ 스타일 텍스처 실제 크기 얻기
 	ID3D12Resource* styleTex = styleImage.GetTexture();
 	auto sDesc = styleTex->GetDesc();
 	UINT styleW = (UINT)sDesc.Width;
 	UINT styleH = sDesc.Height;
 
-	// 1) ONNX IO 준비 (★ 4 인자)
 	DX_ONNX.PrepareIO(DX_CONTEXT.GetDevice(), W, H, styleW, styleH);
 
 	ID3D12Device* dev = DX_CONTEXT.GetDevice();
 
-	// 2) 컴퓨트 파이프라인(전/후처리)
 	if (!DX_MANAGER.CreateOnnxComputePipeline()) return;
-
-	// 3) OnnxTex (최종 RGBA8)
+	// OnnxTex 
 	{
 		D3D12_RESOURCE_DESC td{};
 		td.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -291,11 +296,11 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 		mOnnxTexState = D3D12_RESOURCE_STATE_COMMON;
 	}
 
-	// 4) 디스크립터 힙
+	// 디스크립터 힙
 	{
 		D3D12_DESCRIPTOR_HEAP_DESC d{};
 		d.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-		d.NumDescriptors = 12; // ★ 약간 여유
+		d.NumDescriptors = 12; 
 		d.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 		dev->CreateDescriptorHeap(&d, IID_PPV_ARGS(&onnxGPUResource->Heap));
 
@@ -337,7 +342,7 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 		onnxGPUResource->InputContentUAV_GPU = nthGPU(1);
 		dev->CreateUnorderedAccessView(DX_ONNX.GetInputBufferContent().Get(), nullptr, &u, onnxGPUResource->InputContentUAV_CPU);
 	}
-	// (2) InputStyle UAV (structured float)  바인딩용
+	// (2) InputStyle UAV (structured float)
 	{
 		D3D12_UNORDERED_ACCESS_VIEW_DESC u{};
 		u.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
@@ -372,7 +377,7 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 		onnxGPUResource->OnnxTexSRV_GPU = nthGPU(4);
 		dev->CreateShaderResourceView(onnxGPUResource->OnnxTex.Get(), &s, onnxGPUResource->OnnxTexSRV_CPU);
 	}
-	// (5) ModelOut SRV (후처리에서 NumElements 갱신)
+	// (5) ModelOut SRV
 	{
 		D3D12_SHADER_RESOURCE_VIEW_DESC s{};
 		s.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
@@ -391,9 +396,8 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 	{
 		onnxGPUResource->StyleSRV_CPU = nthCPU_GPU(6);
 		onnxGPUResource->StyleSRV_GPU = nthGPU(6);
-		// 실제 생성은 WriteStyleSRVToSlot6에서
 	}
-	// (7) InputContent SRV (debug)
+	// (7) InputContent SRV
 	{
 		D3D12_SHADER_RESOURCE_VIEW_DESC s{};
 		s.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
@@ -409,7 +413,7 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 		onnxGPUResource->InputContentSRV_GPU = nthGPU(7);
 		dev->CreateShaderResourceView(DX_ONNX.GetInputBufferContent().Get(), &s, onnxGPUResource->InputContentSRV_CPU);
 	}
-	// (8) InputStyle SRV (debug)
+	// (8) InputStyle SRV
 	{
 		D3D12_SHADER_RESOURCE_VIEW_DESC s{};
 		s.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
@@ -425,7 +429,7 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 		onnxGPUResource->InputStyleSRV_GPU = nthGPU(8);
 		dev->CreateShaderResourceView(DX_ONNX.GetInputBufferStyle().Get(), &s, onnxGPUResource->InputStyleSRV_CPU);
 	}
-	// (9) RAW UAV(버퍼) ClearUAV용 핸들 (GPU/CPU heap에 쌍으로 생성)
+	// (9) RAW UAV
 	{
 		D3D12_UNORDERED_ACCESS_VIEW_DESC uRaw{};
 		uRaw.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
@@ -433,7 +437,7 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 		uRaw.Buffer.FirstElement = 0;
 		auto bytes = DX_ONNX.GetInputBufferStyle()->GetDesc().Width;
 		UINT elems = (UINT)(bytes / 4);
-		uRaw.Buffer.NumElements = elems & ~3u; // 4의 배수로 내림
+		uRaw.Buffer.NumElements = elems & ~3u;
 		uRaw.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
 
 		const UINT slot = 9;
@@ -448,7 +452,7 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 			DX_ONNX.GetInputBufferStyle().Get(), nullptr, &uRaw, onnxGPUResource->InputStyleUAV_CPU_ForClear);
 	}
 
-	// 5) CB
+	// 10) CB
 	{
 		const UINT Slice = (UINT)((sizeof(UINT) * 8 + 255) & ~255);
 		CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_UPLOAD);

@@ -4,17 +4,13 @@ static const uint OUT_TANH = 0x0001; // [-1,1] -> [0,1]
 static const uint OUT_255 = 0x0002; // [0,255] -> [0,1]
 
 StructuredBuffer<float> gOut : register(t0); // CHW
-//RWTexture2D<unorm float4> gDst : register(u0);
-RWTexture2D<float4> gDst : register(u0); // ¡Ú unorm Á¦°Å!
+RWTexture2D<float4> gDst : register(u0); // 
 
 cbuffer CB : register(b0)
 {
     uint SrcW, SrcH, SrcC, Flags;
     uint DstW, DstH, _r1, _r2;
-    float Gain;
-    float Bias;
-    float _pad0;
-    float _pad1;
+    float Gain, Bias, _pad0, _pad1;
 }
 float sampleCHW_bilinear(uint c, float2 uv)
 {
@@ -52,6 +48,11 @@ void main(uint3 dtid : SV_DispatchThreadID)
     float b = (SrcC > 2) ? sampleCHW_bilinear(2, uv) : r;
 
     float3 rgb = float3(r, g, b);
+    if (Flags & 0x1)
+    {
+        rgb = rgb.bgr;
+    }
+    
     if (Flags & 0x10)
     {
         rgb = float3(r, g, b) / 255.0;

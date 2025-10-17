@@ -69,5 +69,10 @@ protected: // Variables
 	bool mVbDirty = true;
 	bool mTexDirty = true;
 
+	UINT m_MipCount = 1;
+	std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> m_MipFootprints;
+	std::vector<UINT>  m_MipNumRowsV;
+	std::vector<UINT64> m_MipRowSizeInBytesV;
+
 };
 

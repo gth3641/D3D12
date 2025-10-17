@@ -36,9 +36,9 @@ bool OnnxManager::Init(OnnxType type, ID3D12Device* dev, ID3D12CommandQueue* que
         }
 	    case OnnxType::FastNeuralStyle:
         {
-		    return Init(L"./Resources/Onnx/FHD/rain_princess_opset12_dyn.onnx", dev, queue);
+		    //return Init(L"./Resources/Onnx/FHD/rain_princess_opset12_dyn.onnx", dev, queue);
 		    //return Init(L"./Resources/Onnx/FHD/mosaic_opset12_dyn.onnx", dev, queue);
-		    //return Init(L"./Resources/Onnx/FHD/udnie_opset12_dyn.onnx", dev, queue);
+		    return Init(L"./Resources/Onnx/FHD/udnie_opset12_dyn.onnx", dev, queue);
         }
 	    case OnnxType::ReCoNet:
         {
@@ -118,7 +118,7 @@ void OnnxManager::InitOnnxRunner(const std::wstring& modelPath, ID3D12Device* de
     if (modelPath.find(L"sanet") != std::wstring::npos)
     {
         m_OnnxRunner = std::make_unique<OnnxRunner_AdaIN>();
-        m_OnnxType = OnnxType::AdaIN;
+        m_OnnxType = OnnxType::Sanet;
     }
     else if (modelPath.find(L"WCT") != std::wstring::npos)
     {

@@ -77,7 +77,6 @@ public: // Functions
     bool Init();
     void Shutdown();
     void Update(float deltaTime);
-    void RenderCube(ID3D12GraphicsCommandList7* cmd); 
     void RenderImage(ID3D12GraphicsCommandList7* cmd); 
     void Resize();
 
@@ -92,16 +91,14 @@ public: // Functions
     void RecordPreprocess(ID3D12GraphicsCommandList7* cmd);
     void RecordPostprocess(ID3D12GraphicsCommandList7* cmd);
 
-    void OnChangedMouseLock();
-
     bool CreateOnnxComputePipeline();
 
     //===========Getter=================//
     D3D12_INPUT_ELEMENT_DESC* GetVertexLayout() { return m_VertexLayout; }
     int GetVertexLayoutCount() { return _countof(m_VertexLayout); }
 
-    RenderingObject& GetRenderingObject1() { return RenderingObject1; }
-    RenderingObject& GetRenderingObject2() { return RenderingObject2; }
+    //RenderingObject& GetRenderingObject1() { return RenderingObject1; }
+    //RenderingObject& GetRenderingObject2() { return RenderingObject2; }
 
     ComPointer<ID3D12RootSignature>& GetRootSignature() { return m_RootSignature; }
     ComPointer<ID3D12PipelineState>& GetPipelineStateObj() { return m_PipelineStateObj; }
@@ -111,13 +108,11 @@ private: // Functions
     void InitGeometry();
     void InitShader();
 
-
     void SetVerticies();
     void SetVertexLayout();
 
     void UploadTextureBuffer();
     void CreateSRV();
-    //void UploadCPUResource();
 
     void InitPipelineSate(Shader& vertexShader, Shader& pixelShader);
 
@@ -131,19 +126,23 @@ private: // Variables
 
     D3D12_INPUT_ELEMENT_DESC m_VertexLayout[2];
 
-    RenderingObject RenderingObject1;
-    RenderingObject RenderingObject2;
-    RenderingObject m_StyleObject;
-    RenderingObject3D m_PlaneObject;
-    RenderingObject3D m_CubeObject;
+    std::unique_ptr<RenderingObject> m_RenderingObject1;
+    std::unique_ptr<RenderingObject> m_RenderingObject2;
+    std::unique_ptr<RenderingObject> m_StyleObject;
+    std::unique_ptr<RenderingObject3D> m_PlaneObject;
+    std::unique_ptr<RenderingObject3D> m_CubeObject;
 
+    //RenderingObject RenderingObject1;
+    //RenderingObject RenderingObject2;
+    //RenderingObject m_StyleObject;
+    //RenderingObject3D m_PlaneObject;
+    //RenderingObject3D m_CubeObject;
 
     ComPointer<ID3D12RootSignature> m_RootSignature;
     ComPointer<ID3D12RootSignature> m_BlitRS2;
     ComPointer<ID3D12PipelineState> m_PipelineStateObj;
     ComPointer<ID3D12PipelineState> m_PsoBlitBackbuffer;
     ComPointer<ID3D12PipelineState> m_BlitPSO2;
-
 
     std::unique_ptr<OnnxPassResources> m_Onnx = nullptr;
     std::unique_ptr<OnnxGPUResources> m_OnnxGPU = nullptr;
@@ -173,18 +172,7 @@ private: // Variables
     D3D12_RESOURCE_STATES mOnnxTexState = D3D12_RESOURCE_STATE_COMMON;
     D3D12_RESOURCE_STATES mOnnxInputState = D3D12_RESOURCE_STATE_COMMON;
 
-#pragma region 테스트
-public:
-    bool CreateGreenPipeline();
-    void DrawConstantGreen(ID3D12GraphicsCommandList7* cmd);
-
-    void DrawConstantGreen_Standalone();
-
-private: // Variables
-    ComPointer<ID3D12RootSignature> m_RS_Green;
-    ComPointer<ID3D12PipelineState>  m_PSO_Green;
-
-#pragma endregion
+    Camera mCam;
 
 public:
     void Debug_DumpOrtOutput(ID3D12GraphicsCommandList7* cmd);
@@ -192,8 +180,7 @@ public:
 
 // Render Cube
 private:// Functions
-    bool InitCubePipeline();     // RS/PSO/셰이더
-    //bool InitCubeGeometry();     // VB/IB
+    bool InitCubePipeline();    
     bool InitDepth(UINT w, UINT h);
     void DestroyDepth();
 
@@ -201,13 +188,6 @@ private: // Variables
     // PSO / RootSig
     ComPointer<ID3D12PipelineState>     mCubePSO;
     ComPointer<ID3D12RootSignature>     mCubeRootSig;
-
-    // 버퍼들
-    ComPointer<ID3D12Resource2>         mVB;
-    ComPointer<ID3D12Resource2>         mIB;
-    D3D12_VERTEX_BUFFER_VIEW            mVBV{};
-    D3D12_INDEX_BUFFER_VIEW             mIBV{};
-    UINT                                mIndexCount = 0;
 
     // 깊이버퍼 + DSV 힙
     ComPointer<ID3D12DescriptorHeap>    mDsvHeap;
@@ -217,45 +197,6 @@ private: // Variables
     // 뷰/프로젝션
     float mAngle = 0.f;
     float mAspect = 16.f / 9.f;
-
-
-// Render Cam
-public:
-    // === Ground geometry ===
-    //bool InitGroundGeometry();
-   // void RenderGround(ID3D12GraphicsCommandList7* cmd);
-
-    void Debug_FillOnnxTex(ID3D12GraphicsCommandList7* cmd);
-    void Debug_ViewPreprocessCHW(ID3D12GraphicsCommandList7* cmd);
-    bool CreateDebugFillOnnxTexPSO();
-    bool CreateDebugViewPreCHWPSO();
-    void RecreatePrevStylizedIfNeeded(UINT W, UINT H);
-    ComPointer<ID3D12Resource2> mPrevStylized = nullptr;
-private:
-
-    Camera mCam;
-
-    D3D12_RESOURCE_STATES mPrevStylizedState = D3D12_RESOURCE_STATE_COMMON;
-    bool mHasPrevStylized = false;
-
-    ComPointer<ID3D12PipelineState> m_DebugFillOnnxTexPSO;
-    ComPointer<ID3D12PipelineState> m_DebugViewPreCHWPSO;
-
-    //ComPointer<ID3D12Resource2>  mGroundVB;
-    //ComPointer<ID3D12Resource2>  mGroundIB;
-    //D3D12_VERTEX_BUFFER_VIEW     mGroundVBV{};
-    //D3D12_INDEX_BUFFER_VIEW      mGroundIBV{};
-    //UINT                         mGroundIndexCount = 0;
-
-public:
-    void Debug_PostprocessOnly(ID3D12GraphicsCommandList7* cmd);
-
-private:
-    void EnsureDebugModelCHW(UINT srcW, UINT srcH);
-
-    // 디버그용 모델출력(CHW) 버퍼
-    ComPointer<ID3D12Resource> mDebugModel;
-    UINT mDebugSrcW = 0, mDebugSrcH = 0;
 
 };
 

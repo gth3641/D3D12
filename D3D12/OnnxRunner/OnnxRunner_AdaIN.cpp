@@ -23,18 +23,14 @@ bool OnnxRunner_AdaIN::Init(const std::wstring& modelPath, ID3D12Device* dev, ID
     m_So.SetIntraOpNumThreads(0);
     m_So.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
-    // DML EP API 획득 + 동일 큐 연결
     Ort::ThrowOnError(Ort::GetApi().GetExecutionProviderApi(
         "DML", ORT_API_VERSION, reinterpret_cast<const void**>(&m_DmlApi)));
     Ort::ThrowOnError(m_DmlApi->SessionOptionsAppendExecutionProvider_DML1(
         m_So, dml.Get(), m_Queue));
 
     m_Session = std::make_unique<Ort::Session>(m_Env, modelPath.c_str(), m_So);
-
-    // ★ 대소문자는 ORT 버전에 따라 "DML" / "Dml" 모두 동작하나, 일관되게 "DML" 권장
     miDml_ = Ort::MemoryInfo("DML", OrtAllocatorType::OrtDeviceAllocator, 0, OrtMemTypeDefault);
 
-    // IO 메타데이터(이름/shape 복사)
     Ort::AllocatorWithDefaultOptions alloc;
 
     int inputCount = m_Session->GetInputCount();

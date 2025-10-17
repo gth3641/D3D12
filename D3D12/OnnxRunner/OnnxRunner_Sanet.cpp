@@ -77,7 +77,6 @@ bool OnnxRunner_Sanet::PrepareIO(ID3D12Device* dev, UINT contentW, UINT contentH
 {
     const bool twoInputs = (m_Session->GetInputCount() == 2);
 
-    // ===== Content =====
     {
         const UINT W = (contentW / 4) * 4, H = (contentH / 4) * 4;
         auto inShape = m_InShapeContent;                  // [-1,3/6,-1,-1]
@@ -101,7 +100,6 @@ bool OnnxRunner_Sanet::PrepareIO(ID3D12Device* dev, UINT contentW, UINT contentH
             m_InShapeContent.data(), m_InShapeContent.size(), ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
     }
 
-    // ===== Style (2-input일 때만) =====
     if (twoInputs) {
         const UINT W = (styleW ? styleW : contentW), H = (styleH ? styleH : contentH);
         auto sh = m_InShapeStyle;                        // [-1,3,-1,-1]
@@ -123,7 +121,6 @@ bool OnnxRunner_Sanet::PrepareIO(ID3D12Device* dev, UINT contentW, UINT contentH
             m_InShapeStyle.data(), m_InShapeStyle.size(), ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
     }
 
-    // ===== Output reset & IoBinding (shape discovery) =====
     if (m_OutAlloc) { m_DmlApi->FreeGPUAllocation(m_OutAlloc); m_OutAlloc = nullptr; }
     m_OutputBuf.Release(); m_OutBytes = 0; m_OutTensorDML = Ort::Value{ nullptr };
     m_OutShape.clear(); m_OutputBound = false;
@@ -131,7 +128,6 @@ bool OnnxRunner_Sanet::PrepareIO(ID3D12Device* dev, UINT contentW, UINT contentH
     m_Binding->ClearBoundInputs();
     m_Binding->ClearBoundOutputs();
 
-    // ★★ 핵심: 2입력일 때 두 개 모두 바인딩 ★★
     if (twoInputs) {
         m_Binding->BindInput(m_InNameContent.c_str(), m_InTensorContentDML);
         m_Binding->BindInput(m_InNameStyle.c_str(), m_InTensorStyleDML);

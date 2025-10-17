@@ -22,8 +22,27 @@
 #define DEBUG_DUMP 0
 #define DEBUG_TIME 1
 
-static constexpr bool kDebugFillOnnxTex = false;		// 이전 단계: 텍스처 채우기
-static constexpr bool kDebugPostprocessOnly = false;		// 이번 단계: 후처리만 단독 검증
+#if DEBUG_TIME
+#define DEBUG_TIME_EXPR(OUT_NAME)\
+    endSecStart = std::chrono::system_clock::now() - startTime;\
+    Util::Print((float)endSecStart.count(), OUT_NAME);
+#else
+#define DEBUG_TIME_EXP(OUT_NAME)  ((void)0)
+#endif
+
+constexpr OnnxType ONNX_TYPE = OnnxType::FastNeuralStyle;
+
+void Shutdown()
+{
+	DX_MANAGER.Shutdown();
+	DX_IMAGE.Shutdown();
+	DX_ONNX.Shutdown();
+	DX_WINDOW.Shutdown();
+	DX_CONTEXT.Shutdown();
+	DX_INPUT.Shutdown();
+
+	DX_DEBUG_LAYER.Shutdown();
+}
 
 int main()
 {
@@ -42,7 +61,7 @@ int main()
 		return -1;
 	}
 
-	if (DX_ONNX.Init(OnnxType::Sanet, DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
+	if (DX_ONNX.Init(ONNX_TYPE, DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
 	{
 		return -1;
 	}
@@ -67,104 +86,40 @@ int main()
 		bool updated = DX_WINDOW.MessageUpdate(deltaTime);
 
         DX_WINDOW.Update(deltaTime);
-		//Util::Print(deltaTime, "TICK");
+#if DEBUG_TIME
+		Util::Print(deltaTime, "TICK");
+#endif
 		{
 			ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
 			DX_MANAGER.RenderOffscreen(cmd);
 			DX_MANAGER.RecordPreprocess(cmd);          
 			DX_CONTEXT.ExecuteCommandList();        
 
-			if(kDebugFillOnnxTex == true)
-			{
-				ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
-				DX_MANAGER.Debug_FillOnnxTex(cmd);         // ← OnnxTex UAV에 그라디언트 채우기
-				DX_MANAGER.BlitToBackbuffer(cmd);          // ← 화면으로 블릿
-				DX_CONTEXT.ExecuteCommandList();
-				DX_WINDOW.Present();
-				continue; // ONNX.Run / RecordPostprocess 건너뛰기
-			}
+			DEBUG_TIME_EXPR("ONNX START");
 
-#if DEBUG_TIME
-			endSecStart = std::chrono::system_clock::now() - startTime;
-			Util::Print((float)endSecStart.count(), "ONNX START");
-#endif
 #if DEBUG_DUMP
 			DX_MANAGER.Debug_DumpBuffer(DX_ONNX.GetInputBufferContent().Get(), "CONTENT");
-			DX_MANAGER.Debug_DumpBuffer(DX_MANAGER.mPrevStylized.Get(), "PRE STYLE");
 			DX_MANAGER.Debug_DumpBuffer(DX_ONNX.GetInputBufferStyle().Get(), "STYLE");
 #endif
 		}
 
-		if (kDebugPostprocessOnly)
-		{
-			ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
-			DX_MANAGER.Debug_PostprocessOnly(cmd);   // ← 후처리만 실행 (가짜 CHW 입력)
-			DX_MANAGER.BlitToBackbuffer(cmd);        // ← 결과 화면으로
-			DX_CONTEXT.ExecuteCommandList();
-			DX_WINDOW.Present();
-			continue; // ONNX.Run / RecordPostprocess 생략
-		}
-		
-
-		//{
-		//	// 3) 전처리 결과 시각화 (모자이크)
-		//	ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
-		//	DX_MANAGER.Debug_ViewPreprocessCHW(cmd);
-		//	DX_MANAGER.BlitToBackbuffer(cmd);
-		//	DX_CONTEXT.ExecuteCommandList();
-		//	DX_WINDOW.Present();
-		//	continue; // ONNX.Run / RecordPostprocess 생략
-
-		//}
-
 		DX_ONNX.Run();
-		//DX_CONTEXT.SignalAndWait();
-
-#if DEBUG_TIME
-		endSecStart = std::chrono::system_clock::now() - startTime;
-		Util::Print((float)endSecStart.count(), "ONNX RUNNING");
-#endif
+		DEBUG_TIME_EXPR("ONNX RUNNING");
 
 		{
 			ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
 			DX_MANAGER.RecordPostprocess(cmd);
-
-#if DEBUG_TIME
-			endSecStart = std::chrono::system_clock::now() - startTime;
-			Util::Print((float)endSecStart.count(), "RecordPostprocess");
-#endif
-
+			DEBUG_TIME_EXPR("RecordPostprocess");
 			DX_MANAGER.BlitToBackbuffer(cmd);
-
-#if DEBUG_TIME
-			endSecStart = std::chrono::system_clock::now() - startTime;
-			Util::Print((float)endSecStart.count(), "BlitToBackbuffer");
-#endif
-
+			DEBUG_TIME_EXPR("BlitToBackbuffer");
 			DX_CONTEXT.ExecuteCommandList();
-
-#if DEBUG_TIME
-			endSecStart = std::chrono::system_clock::now() - startTime;
-			Util::Print((float)endSecStart.count(), "ExecuteCommandList");
-#endif
-
+			DEBUG_TIME_EXPR("ExecuteCommandList");
 			DX_WINDOW.Present();
-
-#if DEBUG_TIME
-			endSecStart = std::chrono::system_clock::now() - startTime;
-			Util::Print((float)endSecStart.count(), "ONNX END");
-#endif
+			DEBUG_TIME_EXPR("ONNX END");
 		}
 	}
 
-    DX_MANAGER.Shutdown();
-    DX_IMAGE.Shutdown();
-    DX_ONNX.Shutdown();
-    DX_WINDOW.Shutdown();
-    DX_CONTEXT.Shutdown();
-	DX_INPUT.Shutdown();
-
-    DX_DEBUG_LAYER.Shutdown();
+	Shutdown();
     return 0;
 }
 

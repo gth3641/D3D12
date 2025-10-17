@@ -1,8 +1,11 @@
 #include "OnnxService_Sanet.h"
 #include "Util/OnnxDefine.h"
+
 #include "Manager/OnnxManager.h"
 #include "Manager/DirectXManager.h"
+
 #include "Support/Image.h"
+#include "Support/Shader.h"
 
 enum class NormProfile { Raw01, ImageNet, CaffeBGR255, TanhIn };
 static NormProfile kProfile = NormProfile::Raw01; 
@@ -62,7 +65,8 @@ void OnnxService_Sanet::RecordPreprocess_Sanet(
 		{
 			const auto& ish = DX_ONNX.GetInputShapeContent(); // [1,3,H,W]
 			const UINT inW = (UINT)ish[3], inH = (UINT)ish[2], inC = 3;
-			struct CB { UINT W, H, C, Flags; UINT _0, _1, _2, _3; } cb{ inW,inH,inC,flags,0,0,0,0 };
+			
+			PreCBData cb{ inW,inH,inC,flags,0,0,0,0 };
 			void* p = nullptr; onnxGPUResource->CB->Map(0, nullptr, &p); std::memcpy(p, &cb, sizeof(cb)); onnxGPUResource->CB->Unmap(0, nullptr);
 			cmd->SetComputeRootConstantBufferView(2, onnxGPUResource->CB->GetGPUVirtualAddress());
 
@@ -82,7 +86,8 @@ void OnnxService_Sanet::RecordPreprocess_Sanet(
 			ID3D12Resource2* styleTex = styleImage.GetTexture().Get();
 			const auto& ishS = DX_ONNX.GetInputShapeStyle(); // [1,3,Hs,Ws]
 			const UINT inW = (UINT)ishS[3], inH = (UINT)ishS[2], inC = 3;
-			struct CB { UINT W, H, C, Flags; UINT _0, _1, _2, _3; } cb{ inW,inH,inC,flags,0,0,0,0 };
+
+			PreCBData cb{ inW,inH,inC,flags,0,0,0,0 };
 			void* p = nullptr; onnxGPUResource->CB->Map(0, nullptr, &p); std::memcpy(p, &cb, sizeof(cb)); onnxGPUResource->CB->Unmap(0, nullptr);
 			cmd->SetComputeRootConstantBufferView(2, onnxGPUResource->CB->GetGPUVirtualAddress());
 
@@ -103,11 +108,9 @@ void OnnxService_Sanet::RecordPreprocess_Sanet(
 	{
 		const auto& ish = DX_ONNX.GetInputShapeContent(); // [1,6,H,W]
 		const UINT inW = (UINT)ish[3], inH = (UINT)ish[2], inC = (UINT)ish[1];
-		// t0=content, t1=style (shader가 둘을 합쳐 u0에 CHW(6) 기록)
 		WriteSceneSRVToSlot0(sceneColor, onnxGPUResource);
 		WritePtSRVToSlot1(styleImage.GetTexture().Get(), onnxGPUResource);
-		// flags |= PRE_PT_VALID; // 필요 시
-		struct CB { UINT W, H, C, Flags; UINT _0, _1, _2, _3; } cb{ inW,inH,inC,flags,0,0,0,0 };
+		PreCBData cb{ inW,inH,inC,flags,0,0,0,0 };
 		void* p = nullptr; onnxGPUResource->CB->Map(0, nullptr, &p); std::memcpy(p, &cb, sizeof(cb)); onnxGPUResource->CB->Unmap(0, nullptr);
 		cmd->SetComputeRootConstantBufferView(2, onnxGPUResource->CB->GetGPUVirtualAddress());
 
@@ -169,11 +172,14 @@ void OnnxService_Sanet::RecordPostprocess_Sanet(
 			DX_ONNX.GetOutputBuffer().Get(), &s, onnxGPUResource->ModelOutSRV_CPU);
 	}
 
-	struct CBData {
-		UINT SrcW, SrcH, SrcC, Flags;
-		UINT DstW, DstH, _r1, _r2;
-		float Gain, Bias, _f0, _f1;
-	} cb{ srcW, srcH, srcC, 0, onnxResource->Width, onnxResource->Height, 0,0, 1.0f, 0.0f, 0,0 };
+	UINT flags = 0;
+
+	PostCBData cb
+	{ 
+		srcW, srcH, srcC, flags,
+		onnxResource->Width, onnxResource->Height, 0,0, 
+		1.0f, 0.0f, 0.f, 0.f
+	};
 
 	void* p = nullptr; onnxGPUResource->CB->Map(0, nullptr, &p); std::memcpy(p, &cb, sizeof(cb)); onnxGPUResource->CB->Unmap(0, nullptr);
 	cmd->SetComputeRootConstantBufferView(2, onnxGPUResource->CB->GetGPUVirtualAddress());
@@ -214,7 +220,7 @@ void OnnxService_Sanet::CreateOnnxResources_Sanet(UINT W, UINT H,
 	UINT sW = W, sH = H;
 	if (auto* st = styleImage.GetTexture().Get()) { auto d = st->GetDesc(); sW = (UINT)d.Width; sH = d.Height; }
 
-	// ★ 2-입력 모델이면 style 크기까지 넘김
+	// 2-입력 모델이면 style 크기까지 넘김
 	DX_ONNX.PrepareIO(dev, W, H, sW, sH);
 
 	if (!DX_MANAGER.CreateOnnxComputePipeline()) return;

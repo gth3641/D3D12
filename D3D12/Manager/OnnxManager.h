@@ -16,8 +16,6 @@
 
 #define DX_ONNX OnnxManager::Get()
 
-
-
 class OnnxManager
 {
 public: // Singleton pattern to ensure only one instance exists 
@@ -54,7 +52,9 @@ public: // Functions
     const std::vector<int64_t>& GetInputShapeStyle()    const { return m_OnnxRunner->GetInputShapeStyle(); }
 	bool IsInitialized()                                const { return m_Initialized; }
 	OnnxType GetOnnxType()                              const { return m_OnnxType; }
+	OnnxType GetChangeOnnxType()                        const { return m_ChangeOnnxType; }
     //==================================//
+	void SetChangeOnnxType(OnnxType InOnnxType)         { m_ChangeOnnxType = InOnnxType; }
 
 
 private:
@@ -66,5 +66,7 @@ private:
 
 	bool m_Initialized = false;
 	OnnxType m_OnnxType = OnnxType::None;
+
+    OnnxType m_ChangeOnnxType = OnnxType::AdaIN;
 };
 

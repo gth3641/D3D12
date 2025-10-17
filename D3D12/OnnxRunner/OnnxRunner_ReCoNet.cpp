@@ -20,8 +20,8 @@ bool OnnxRunner_ReCoNet::Init(const std::wstring& modelPath, ID3D12Device* dev, 
     m_Dev = dev; m_Queue = queue;
 
     m_So = Ort::SessionOptions{};
-    m_So.DisableMemPattern();                                 // ★ DirectML 요구
-    m_So.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);     // ★ DirectML 요구
+    m_So.DisableMemPattern();                                
+    m_So.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);    
     m_So.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
     ComPointer<IDMLDevice> dml;
@@ -68,14 +68,12 @@ bool OnnxRunner_ReCoNet::PrepareIO(ID3D12Device* dev, UINT contentW, UINT conten
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_OutputBuf)));
     }
 
-    // ★ DirectML용 GPU allocation 핸들 생성
     if (m_InDmlAlloc) { m_DmlApi->FreeGPUAllocation(m_InDmlAlloc);  m_InDmlAlloc = nullptr; }
     if (m_OutDmlAlloc) { m_DmlApi->FreeGPUAllocation(m_OutDmlAlloc); m_OutDmlAlloc = nullptr; }
 
     Ort::ThrowOnError(m_DmlApi->CreateGPUAllocationFromD3DResource(m_InputBufContent.Get(), &m_InDmlAlloc));
     Ort::ThrowOnError(m_DmlApi->CreateGPUAllocationFromD3DResource(m_OutputBuf.Get(), &m_OutDmlAlloc));
 
-    // ★ OrtValue 래핑 (메모리 정보는 "DML")
     Ort::MemoryInfo miDml("DML", OrtDeviceAllocator, /*device_id*/0, OrtMemTypeDefault);
 
     std::array<int64_t, 4> inShape{ m_InShapeContent[0],  m_InShapeContent[1],  m_InShapeContent[2],  m_InShapeContent[3] };
@@ -86,7 +84,7 @@ bool OnnxRunner_ReCoNet::PrepareIO(ID3D12Device* dev, UINT contentW, UINT conten
     m_OutTensorDML = Ort::Value::CreateTensor(miDml, m_OutDmlAlloc, m_OutputBytes,
         outShape.data(), outShape.size(), ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
 
-    // ★ IoBinding: 제로-카피 바인딩
+    // IoBinding: 제로-카피 바인딩
     m_Binding->ClearBoundInputs();
     m_Binding->ClearBoundOutputs();
     m_Binding->BindInput(m_InputName.c_str(), m_InTensorDML);
@@ -115,9 +113,6 @@ void OnnxRunner_ReCoNet::ResizeIO(ID3D12Device* dev, UINT contentW, UINT content
     m_InputBufContent.Release();
     m_InputBufStyle.Release();
     m_OutputBuf.Release();
-    //m_InputReadback.Release();
-    //m_OutputUpload.Release();
-    //m_OutCPU.clear();
 
     PrepareIO(dev, contentW, contentH, styleW, styleH);
 }
@@ -132,9 +127,6 @@ void OnnxRunner_ReCoNet::Shutdown()
     m_InputBufContent.Release();
     m_InputBufStyle.Release();
     m_OutputBuf.Release();
-    //m_InputReadback.Release();
-    //m_OutputUpload.Release();
-    //m_OutCPU.clear();
     m_InAllocContent = m_InAllocStyle = m_OutAlloc = nullptr;
 }
 
@@ -145,8 +137,6 @@ void OnnxRunner_ReCoNet::AllocateOutputForShape(const std::vector<int64_t>& shap
     m_OutputBytes = BytesOf(m_OutShape, sizeof(float));
 
     m_OutputBuf.Release();
-    //m_OutputUpload.Release();
-    //m_OutCPU.resize(static_cast<size_t>(m_OutputBytes / sizeof(float)));
 
     auto hpDef = HeapDefault();
     auto hpUP = HeapUpload();
@@ -157,9 +147,6 @@ void OnnxRunner_ReCoNet::AllocateOutputForShape(const std::vector<int64_t>& shap
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_OutputBuf)));
 
     auto dUp = MakeBufDesc(m_OutputBytes, D3D12_RESOURCE_FLAG_NONE);
-    //THROW_IF_FAILED(m_Dev->CreateCommittedResource(
-    //    &hpUP, D3D12_HEAP_FLAG_NONE, &dUp,
-    //    D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_OutputUpload)));
 }
 
 D3D12_RESOURCE_DESC OnnxRunner_ReCoNet::MakeBufDesc(UINT64 bytes, D3D12_RESOURCE_FLAGS flags) const

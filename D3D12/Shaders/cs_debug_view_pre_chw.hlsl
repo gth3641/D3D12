@@ -1,11 +1,10 @@
-// cs_postprocess.hlsl  ← 이 버전으로 교체 (핵심: 정수 맵핑)
 StructuredBuffer<float> gIn : register(t0);
 RWTexture2D<float4> gOut : register(u0);
 
 cbuffer CB : register(b0)
 {
     uint SrcW, SrcH, SrcC, Flags;
-    uint DstW, DstH, TilesX, TilesY; // ★ TilesX/TilesY 사용
+    uint DstW, DstH, TilesX, TilesY; 
     float Gain, Bias, _f0, _f1;
 }
 

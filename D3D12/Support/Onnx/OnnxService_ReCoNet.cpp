@@ -1,8 +1,10 @@
 #include "OnnxService_ReCoNet.h"
-#include "Util/OnnxDefine.h"
+
 #include "Manager/OnnxManager.h"
 #include "Manager/DirectXManager.h"
+
 #include "Support/Image.h"
+#include "Support/Shader.h"
 
 
 static void WriteSceneSRVToSlot0(ID3D12Resource2* sceneColor, OnnxGPUResources* onnxGPUResource)
@@ -60,10 +62,12 @@ void OnnxService_ReCoNet::RecordPreprocess_ReCoNet(
 	const bool isBGRA = (fmt == DXGI_FORMAT_B8G8R8A8_UNORM || fmt == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB);
 	if (isBGRA) flags |= PRE_BGR_SWAP;
 
-	// 필요시 뒤집기(좌표 체계에 따라) → 기본은 off
-	// flags |= 0x1;
+	PreCBData cb
+	{ 
+		inW, inH, inC, flags,
+		0, 0, 0, 0
+	};
 
-	struct CB { UINT W, H, C, Flags; } cb{ inW, inH, inC, flags };
 	{
 		// 256B 정렬 CB 한 슬라이스만 사용
 		uint8_t* base = nullptr;
@@ -73,7 +77,7 @@ void OnnxService_ReCoNet::RecordPreprocess_ReCoNet(
 		cmd->SetComputeRootConstantBufferView(2, onnxGPUResource->CB->GetGPUVirtualAddress() + 0);
 	}
 
-	// t0: Scene SRV (★ SRGB 포맷 SRV면 샘플 시 자동 선형화)
+	// t0: Scene SRV
 	WriteSceneSRVToSlot0(sceneColor, onnxGPUResource);
 	cmd->SetComputeRootDescriptorTable(0, onnxGPUResource->SceneSRV_GPU);
 
@@ -155,11 +159,18 @@ void OnnxService_ReCoNet::RecordPostprocess_ReCoNet(
 	// CB 업데이트
 	const UINT dstW = onnxResource->Width;
 	const UINT dstH = onnxResource->Height;
-	struct CBData {
-		UINT SrcW, SrcH, SrcC, Flags; // Flags 예약(미사용=0)
-		UINT DstW, DstH, _r1, _r2;
-		float Gain, Bias, _f0, _f1;   // 색 보정 옵션
-	} cb{ srcW, srcH, srcC, 0, dstW, dstH, 0, 0, 1.0f, 0.0f, 0, 0 };
+	//struct CBData {
+	//	UINT SrcW, SrcH, SrcC, Flags; // Flags 예약(미사용=0)
+	//	UINT DstW, DstH, _r1, _r2;
+	//	float Gain, Bias, _f0, _f1;   // 색 보정 옵션
+	//} 
+	
+	PostCBData cb
+	{ 
+		srcW, srcH, srcC, 0, 
+		dstW, dstH, 0, 0, 
+		1.0f, 0.0f, 0, 0 
+	};
 
 	{
 		void* p = nullptr;

@@ -19,7 +19,6 @@ bool RenderingObject::Init(const std::filesystem::path& imagePath, UINT64 index)
 	AddTexture(imagePath);
 	UploadTextureBuffer();
 	CreateSRV();
-	UploadCPUResource();
 
 	return true;
 }
@@ -50,32 +49,32 @@ void RenderingObject::UploadGPUResource(ID3D12GraphicsCommandList7* cmdList)
 		SetVbDirty(false);
 	}
 
-	// ===== (B) Texture =====
+	// ===== (B) Texture (mip-chain) =====
 	if (mTexDirty) {
 		ID3D12Resource* tex = m_Image->GetTexture();
 
-		// 필요하면 COPY_DEST로 다운전이
 		if (mTexState != D3D12_RESOURCE_STATE_COPY_DEST) {
 			auto toCopy = CD3DX12_RESOURCE_BARRIER::Transition(
 				tex, mTexState, D3D12_RESOURCE_STATE_COPY_DEST);
 			cmdList->ResourceBarrier(1, &toCopy);
 		}
 
-		D3D12_TEXTURE_COPY_LOCATION src{};
+		D3D12_TEXTURE_COPY_LOCATION src{}, dst{};
 		src.pResource = m_UploadBuffer;
 		src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-		src.PlacedFootprint = m_TexFootprint;
-
-		D3D12_TEXTURE_COPY_LOCATION dst{};
 		dst.pResource = tex;
 		dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-		dst.SubresourceIndex = 0;
 
-		cmdList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+		const UINT dstMips = tex->GetDesc().MipLevels;
+		const UINT copyMips = std::min<UINT>(dstMips, m_MipCount);
+		for (UINT level = 0; level < copyMips; ++level) {
+			src.PlacedFootprint = m_MipFootprints[level];
+			dst.SubresourceIndex = level;
+			cmdList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+		}
 
 		auto toSRV = CD3DX12_RESOURCE_BARRIER::Transition(
-			tex,
-			D3D12_RESOURCE_STATE_COPY_DEST,
+			tex, D3D12_RESOURCE_STATE_COPY_DEST,
 			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 		cmdList->ResourceBarrier(1, &toSRV);
 
@@ -128,48 +127,60 @@ void RenderingObject::UploadTextureBuffer()
 	if (m_Image == nullptr) return;
 
 	auto dev = DX_CONTEXT.GetDevice();
-
-	// 1) 텍스처 desc (원본 포맷 그대로)
 	const auto& td = m_Image->GetTextureData();
+
+	const bool isRGBA8 =
+		(td.giPixelFormat == DXGI_FORMAT_R8G8B8A8_UNORM || td.giPixelFormat == DXGI_FORMAT_B8G8R8A8_UNORM);
+
+
+	auto CalcMipCount = [](UINT w, UINT h) {
+		UINT m = 1;
+		while (w > 1 || h > 1) { w = (w > 1) ? (w >> 1) : 1; h = (h > 1) ? (h >> 1) : 1; ++m; }
+		return m;
+		};
+
+	m_MipCount = isRGBA8 ? CalcMipCount((UINT)td.width, (UINT)td.height) : 1;
+
+	// (B) 텍스처 desc 
 	D3D12_RESOURCE_DESC texDesc{};
 	texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 	texDesc.Width = td.width;
 	texDesc.Height = td.height;
 	texDesc.DepthOrArraySize = 1;
-	texDesc.MipLevels = 1;
-	texDesc.Format = td.giPixelFormat;  // 예: DXGI_FORMAT_B8G8R8A8_UNORM
+	texDesc.MipLevels = (UINT16)m_MipCount;          
+	texDesc.Format = td.giPixelFormat;         
 	texDesc.SampleDesc = { 1, 0 };
 	texDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	texDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
-	// 2) Footprint (RowPitch/UploadSize)
-	UINT    numRows = 0;
-	UINT64  rowSizeInBytes = 0; // width*BPP (패딩X)
-	UINT64  uploadSize = 0;
-	D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp{};
-	dev->GetCopyableFootprints(&texDesc, 0, 1, 0, &fp, &numRows, &rowSizeInBytes, &uploadSize);
+	// (C) 모든 서브리소스 Footprint 계산
+	m_MipFootprints.resize(m_MipCount);
+	m_MipNumRowsV.resize(m_MipCount);
+	m_MipRowSizeInBytesV.resize(m_MipCount);
 
-	m_TexFootprint = fp;
-	m_TexNumRows = numRows;
-	m_TexRowSizeInBytes = rowSizeInBytes;
-	m_TexUploadSize = uploadSize;
+	UINT64 uploadSize = 0;
+	dev->GetCopyableFootprints(
+		&texDesc, 0, m_MipCount, 0,
+		m_MipFootprints.data(),
+		m_MipNumRowsV.data(),
+		m_MipRowSizeInBytesV.data(),
+		&uploadSize);
 
-	// 3) VB 총 바이트 수
+	// (D) VB 사이즈 계산
 	m_VBSize = 0;
 	for (size_t i = 0, n = GetTriangleIndex(); i < n; ++i)
 		m_VBSize += GetTriagleByIndex(i)->GetVerticiesSize();
 
-	// 4) 업로드 버퍼 레이아웃 = [텍스처 uploadSize][정렬][VB]
+	// (E) 업로드 버퍼 레이아웃 = [모든 mip 데이터][512 정렬][VB]
 	auto Align = [](UINT64 v, UINT64 a) { return (v + (a - 1)) & ~(a - 1); };
-	m_GeomOffsetInUpload = Align(m_TexUploadSize, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT); // 512 정렬
+	m_GeomOffsetInUpload = Align(uploadSize, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
 	const UINT64 totalUpload = m_GeomOffsetInUpload + (m_VBSize ? m_VBSize : 1);
 
-	// 5) 리소스 생성
+	// (F) 리소스 생성
 	D3D12_HEAP_PROPERTIES hpUpload = DirectXManager::GetHeapUploadProperties();
 	D3D12_HEAP_PROPERTIES hpDefault = DirectXManager::GetDefaultUploadProperties();
 
 	auto uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(totalUpload);
-	// ★ UPLOAD 힙은 GENERIC_READ 상태가 정석
 	DX_CONTEXT.GetDevice()->CreateCommittedResource(
 		&hpUpload, D3D12_HEAP_FLAG_NONE, &uploadDesc,
 		D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_UploadBuffer));
@@ -179,8 +190,73 @@ void RenderingObject::UploadTextureBuffer()
 		&hpDefault, D3D12_HEAP_FLAG_NONE, &vbDesc,
 		D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_VertexBuffer));
 
-	// (이미지 내부 준비 루틴 유지)
+	// (G) 업로드 버퍼에 mip-chain 채우기 (간단 2x2 box filter, RGBA8/BGRA8 전용)
+	auto avg4 = [](const uint8_t* a, const uint8_t* b, const uint8_t* c, const uint8_t* d, uint8_t* o) {
+		o[0] = uint8_t((uint32_t(a[0]) + b[0] + c[0] + d[0]) >> 2);
+		o[1] = uint8_t((uint32_t(a[1]) + b[1] + c[1] + d[1]) >> 2);
+		o[2] = uint8_t((uint32_t(a[2]) + b[2] + c[2] + d[2]) >> 2);
+		o[3] = uint8_t((uint32_t(a[3]) + b[3] + c[3] + d[3]) >> 2);
+		};
+
+	const UINT bytesPerPixel = 4; 
+
+	BYTE* dst = nullptr;
+	if (FAILED(m_UploadBuffer->Map(0, nullptr, reinterpret_cast<void**>(&dst))) || !dst)
+		return;
+
+	{
+		const BYTE* src = reinterpret_cast<const BYTE*>(td.data.data());
+		const UINT srcRowBytes = (UINT)(td.width * bytesPerPixel);
+		BYTE* texDstBase = dst + m_MipFootprints[0].Offset;
+		const UINT dstRowPitch = m_MipFootprints[0].Footprint.RowPitch;
+		for (UINT r = 0; r < m_MipNumRowsV[0]; ++r) {
+			std::memcpy(texDstBase + r * dstRowPitch, src + r * srcRowBytes, srcRowBytes);
+		}
+	}
+
+	if (isRGBA8) {
+		UINT prevW = (UINT)td.width, prevH = (UINT)td.height;
+		std::vector<uint8_t> prev;             
+		prev.assign(td.data.begin(), td.data.end());
+
+		for (UINT level = 1; level < m_MipCount; ++level) {
+			const UINT curW = (1u > prevW >> 1 ? 1u : prevW >> 1);
+			const UINT curH = (1u > prevH >> 1 ? 1u : prevH >> 1);
+			std::vector<uint8_t> cur(curW * curH * bytesPerPixel);
+
+			for (UINT y = 0; y < curH; ++y) {
+				for (UINT x = 0; x < curW; ++x) {
+					const UINT sx = x << 1, sy = y << 1;
+					const uint8_t* A = &prev[(sy * prevW + sx) * bytesPerPixel];
+					const uint8_t* B = &prev[(sy * prevW + (prevW - 1 < sx + 1 ? prevW - 1 : sx + 1)) * bytesPerPixel];
+					const uint8_t* C = &prev[((prevH - 1 < sy + 1 ? prevH - 1 : sy + 1) * prevW + sx) * bytesPerPixel];
+					const uint8_t* D = &prev[((prevH - 1 < sy + 1 ? prevH - 1 : sy + 1) * prevW + (prevW - 1 < sx + 1 ? prevW - 1 : sx + 1)) * bytesPerPixel];
+					avg4(A, B, C, D, &cur[(y * curW + x) * bytesPerPixel]);
+				}
+			}
+
+			// 업로드 버퍼에 이 레벨 쓰기 (RowPitch 패딩 고려)
+			BYTE* texDstBase = dst + m_MipFootprints[level].Offset;
+			const UINT dstRowPitch = m_MipFootprints[level].Footprint.RowPitch;
+			const UINT srcRowBytes = curW * bytesPerPixel;
+			for (UINT r = 0; r < curH; ++r) {
+				std::memcpy(texDstBase + r * dstRowPitch, &cur[r * srcRowBytes], srcRowBytes);
+			}
+
+			prev.swap(cur);
+			prevW = curW; prevH = curH;
+		}
+	}
+	UpdateVertexBuffer(dst);
+
+	m_UploadBuffer->Unmap(0, nullptr);
+
+	
 	m_Image->UploadTextureBuffer();
+	mTexState = D3D12_RESOURCE_STATE_COPY_DEST;
+	
+	SetTexDirty(true);
+	SetVbDirty(true);
 }
 
 void RenderingObject::CreateSRV()
@@ -194,7 +270,7 @@ void RenderingObject::CreateSRV()
 	srv.Format = m_Image->GetTextureData().giPixelFormat;
 	srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srv.Texture2D.MipLevels = 1;
+	srv.Texture2D.MipLevels = UINT(-1);
 	srv.Texture2D.MostDetailedMip = 0;
 	srv.Texture2D.PlaneSlice = 0;
 	srv.Texture2D.ResourceMinLODClamp = 0.f;
@@ -208,15 +284,16 @@ void RenderingObject::UpateTexture(BYTE* dst)
 	const auto& td = m_Image->GetTextureData();
 	const BYTE* src = reinterpret_cast<const BYTE*>(td.data.data());
 
-	// 1) 텍스처 데이터: 행 단위로 복사 (dst는 RowPitch가 256 정렬)
-	BYTE* texDstBase = dst + m_TexFootprint.Offset;     // 보통 0
-	const UINT dstRowPitch = m_TexFootprint.Footprint.RowPitch;
-	const UINT srcRowBytes = static_cast<UINT>(m_TexRowSizeInBytes);
+	const auto& fp0 = !m_MipFootprints.empty() ? m_MipFootprints[0] : m_TexFootprint;
 
-	for (UINT r = 0; r < m_TexNumRows; ++r)
-	{
+	BYTE* texDstBase = dst + fp0.Offset;
+	const UINT dstRowPitch = fp0.Footprint.RowPitch;
+
+	const UINT bytesPerPixel = 4; // RGBA/BGRA 전제
+	const UINT srcRowBytes = (UINT)(td.width * bytesPerPixel);
+
+	for (UINT r = 0; r < fp0.Footprint.Height; ++r) {
 		std::memcpy(texDstBase + r * dstRowPitch, src + r * srcRowBytes, srcRowBytes);
-		// 남는 패딩은 냅둬도 OK
 	}
 
 	SetTexDirty(true);
@@ -224,7 +301,6 @@ void RenderingObject::UpateTexture(BYTE* dst)
 
 void RenderingObject::UpdateVertexBuffer(BYTE* dst)
 {
-	// 2) 업로드 버퍼의 VB 영역에 정점 데이터 연속 복사
 	size_t cur = 0;
 	for (size_t i = 0, n = GetTriangleIndex(); i < n; ++i)
 	{
@@ -242,7 +318,6 @@ void RenderingObject::UploadCPUResource(bool textureUpdate, bool vertexUpdate)
 	if (m_Image == nullptr || m_UploadBuffer == nullptr) return;
 
 	BYTE* dst = nullptr;
-	// ★ 쓰기만 할 거면 read range = nullptr
 	if (FAILED(m_UploadBuffer->Map(0, nullptr, reinterpret_cast<void**>(&dst))) || !dst)
 		return;
 
@@ -256,7 +331,6 @@ void RenderingObject::UploadCPUResource(bool textureUpdate, bool vertexUpdate)
 		UpdateVertexBuffer(dst);
 	}
 
-	// ★ write-only라면 Unmap range = nullptr
 	m_UploadBuffer->Unmap(0, nullptr);
 
 	

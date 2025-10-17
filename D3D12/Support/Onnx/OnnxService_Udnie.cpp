@@ -1,8 +1,11 @@
 #include "OnnxService_Udnie.h"
 #include "Util/OnnxDefine.h"
+
 #include "Manager/OnnxManager.h"
 #include "Manager/DirectXManager.h"
+
 #include "Support/Image.h"
+#include "Support/Shader.h"
 
 
 void OnnxService_Udnie::RecordPreprocess_Udnie(
@@ -41,11 +44,12 @@ void OnnxService_Udnie::RecordPreprocess_Udnie(
 	UINT dstW = onnxResource->Width;                 // 창 폭(= OnnxTex 폭)
 	UINT dstH = onnxResource->Height;                // 창 높이(= OnnxTex 높이)
 
-	// CB 업데이트 (W=네트워크 입력 너비, H=높이, C=채널)
-	struct CB
-	{
-		UINT SrcW, SrcH, SrcC, DstW, DstH, _pad[3];
-	} cb{ inW, inH, inC, dstW, dstH };
+	PreCBData cb
+	{ 
+		inW, inH, inC, 0,
+		dstW, dstH, 0, 0
+	};
+
 	void* p = nullptr;
 	onnxGPUResource->CB->Map(0, nullptr, &p);
 	memcpy(p, &cb, sizeof(cb));
@@ -74,7 +78,7 @@ void OnnxService_Udnie::RecordPreprocess_Udnie(
 	auto uav = CD3DX12_RESOURCE_BARRIER::UAV(DX_ONNX.GetInputBufferContent().Get());
 	cmd->ResourceBarrier(1, &uav);
 
-	// 2) InputBuffer: UAV -> GENERIC_READ (★ ORT가 바로 읽게)
+	// 2) InputBuffer: UAV -> GENERIC_READ 
 	{
 		auto toRead = CD3DX12_RESOURCE_BARRIER::Transition(
 			DX_ONNX.GetInputBufferContent().Get(),
@@ -103,10 +107,17 @@ void OnnxService_Udnie::RecordPostprocess_Udnie(
 	const UINT dstW = onnxResource->Width;      // CreateOnnxResources(W,H)에서 받은 화면 크기
 	const UINT dstH = onnxResource->Height;
 
-	struct CBData {
+	/*struct CBData {
 		UINT SrcW, SrcH, SrcC, _r0;
 		UINT DstW, DstH, _r1, _r2;
-	} CB{ srcW, srcH, srcC, 0, dstW, dstH, 0, 0 };
+	} */
+	
+	PostCBData CB
+	{ 
+		srcW, srcH, srcC, 0, 
+		dstW, dstH, 0, 0,
+		1.f, 0.f, 0.f, 0.f
+	};
 
 	void* p = nullptr;
 	onnxGPUResource->CB->Map(0, nullptr, &p);

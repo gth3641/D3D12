@@ -55,21 +55,17 @@ bool OnnxRunner_FastNeuralStyle::Init(const std::wstring& modelPath, ID3D12Devic
 
 bool OnnxRunner_FastNeuralStyle::PrepareIO(ID3D12Device* dev, UINT contentW, UINT contentH, UINT styleW, UINT styleH)
 {
-    // (권장) 4의 배수 정렬
     const UINT W = (contentW / 4) * 4;
     const UINT H = (contentH / 4) * 4;
 
-    // 입력 shape 확정
     auto inShapeContent = m_InShapeContent; // 보통 [-1,3,-1,-1]
     FillDynamicNCHW(inShapeContent, 1, 3, (int)H, (int)W);
     m_InBytesContent = BytesOf(inShapeContent, sizeof(float));
     if (m_InBytesContent == 0) return false;
 
-    // 이전 입력 자원 정리
     if (m_InAllocContent) { m_DmlApi->FreeGPUAllocation(m_InAllocContent); m_InAllocContent = nullptr; }
     m_InputBufContent.Release();
 
-    // 입력 버퍼 생성 (DEFAULT + UAV)
     CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
     auto rd = CD3DX12_RESOURCE_DESC::Buffer(m_InBytesContent, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
     THROW_IF_FAILED(dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd,
@@ -77,14 +73,12 @@ bool OnnxRunner_FastNeuralStyle::PrepareIO(ID3D12Device* dev, UINT contentW, UIN
     m_InputBufContent->SetName(L"ORT_Input_Content");
     Ort::ThrowOnError(m_DmlApi->CreateGPUAllocationFromD3DResource(m_InputBufContent.Get(), &m_InAllocContent));
 
-    // 입력 텐서(DML) 멤버 보관
     m_InShapeContent = std::move(inShapeContent);
     m_InTensorDML = Ort::Value::CreateTensor(
         miDml_, m_InAllocContent, m_InBytesContent,
         m_InShapeContent.data(), m_InShapeContent.size(),
         ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
 
-    // 출력 자원/상태 리셋
     if (m_OutAlloc) { m_DmlApi->FreeGPUAllocation(m_OutAlloc); m_OutAlloc = nullptr; }
     m_OutputBuf.Release();
     m_OutBytes = 0;
@@ -92,7 +86,6 @@ bool OnnxRunner_FastNeuralStyle::PrepareIO(ID3D12Device* dev, UINT contentW, UIN
     m_OutShape.clear();
     m_OutputBound = false;
 
-    // ★ 멤버 IoBinding 재세팅: 입력 바인딩, 출력은 "발견 모드"
     m_Binding->ClearBoundInputs();
     m_Binding->ClearBoundOutputs();
     m_Binding->BindInput(m_InNameContent.c_str(), m_InTensorDML);

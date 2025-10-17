@@ -1,8 +1,11 @@
 #include "OnnxService_FastNeuralStyle.h"
 #include "Util/OnnxDefine.h"
+
 #include "Manager/OnnxManager.h"
 #include "Manager/DirectXManager.h"
+
 #include "Support/Image.h"
+#include "Support/Shader.h"
 
 
 static void WriteSceneSRVToSlot0(ID3D12Resource2* sceneColor, OnnxGPUResources* onnxGPUResource)
@@ -15,18 +18,6 @@ static void WriteSceneSRVToSlot0(ID3D12Resource2* sceneColor, OnnxGPUResources* 
 	s.Texture2D.MipLevels = 1;
 	dev->CreateShaderResourceView(sceneColor, &s, onnxGPUResource->SceneSRV_CPU);
 }
-
-static void WriteStyleSRVToSlot6(ID3D12Resource* styleTex, DXGI_FORMAT fmt, OnnxGPUResources* onnxGPUResource)
-{
-	if (!styleTex) return;
-	D3D12_SHADER_RESOURCE_VIEW_DESC s{};
-	s.Format = fmt;
-	s.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	s.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	s.Texture2D.MipLevels = 1;
-	DX_CONTEXT.GetDevice()->CreateShaderResourceView(styleTex, &s, onnxGPUResource->StyleSRV_CPU);
-}
-
 
 
 void OnnxService_FastNeuralStyle::RecordPreprocess_FastNeuralStyle(
@@ -46,10 +37,9 @@ void OnnxService_FastNeuralStyle::RecordPreprocess_FastNeuralStyle(
 	cmd->SetComputeRootSignature(onnxResource->PreRS.Get());
 	cmd->SetPipelineState(onnxResource->PrePSO.Get());
 
-	// 256바이트 정렬된 CB 크기(전/후처리 공용으로 1슬라이스만 사용)
+	// 256바이트 정렬된 CB 크기
 	const UINT kCBAligned = ((sizeof(UINT) * 8 + 255) & ~255);
 
-	// ----- CONTENT -----
 	UINT inWc = 0, inHc = 0, inCc = 0;
 	{
 		const auto& ish = DX_ONNX.GetInputShapeContent(); // [1,3,H,W]
@@ -62,8 +52,12 @@ void OnnxService_FastNeuralStyle::RecordPreprocess_FastNeuralStyle(
 
 		if (fmtC == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB || fmtC == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)
 			flagsC |= LINEAR_TO_SRGB;
-
-		struct CB { UINT W, H, C, Flags; } cb{ inWc, inHc, inCc, flagsC };
+		
+		PreCBData cb
+		{ 
+			inWc, inHc, inCc, flagsC,
+			0, 0, 0, 0
+		};
 		uint8_t* base = nullptr;
 		onnxGPUResource->CB->Map(0, nullptr, (void**)&base);
 		std::memcpy(base + 0, &cb, sizeof(cb)); // 오프셋 0만 사용
@@ -151,12 +145,12 @@ void OnnxService_FastNeuralStyle::RecordPostprocess_FastNeuralStyle(
 	const UINT dstW = onnxResource->Width;
 	const UINT dstH = onnxResource->Height;
 
-	struct CBData {
+	/*struct CBData {
 		UINT SrcW, SrcH, SrcC, Flags;
 		UINT DstW, DstH, _r1, _r2;
 		float Gain, Bias, _f0, _f1;
-	};
-	CBData cb{ srcW, srcH, srcC, 0x10, dstW, dstH, 0, 0, 1.0f, 0.0f, 0, 0 };
+	};*/
+	PostCBData cb{ srcW, srcH, srcC, 0x10, dstW, dstH, 0, 0, 1.0f, 0.0f, 0, 0 };
 
 	void* p = nullptr;
 	onnxGPUResource->CB->Map(0, nullptr, &p);
@@ -235,18 +229,13 @@ void OnnxService_FastNeuralStyle::CreateOnnxResources_FastNeuralStyle(UINT W, UI
 		d.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 		dev->CreateDescriptorHeap(&d, IID_PPV_ARGS(&onnxGPUResource->Heap));
 
-		//D3D12_DESCRIPTOR_HEAP_DESC dCPU = d;
-		//dCPU.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-		//dev->CreateDescriptorHeap(&dCPU, IID_PPV_ARGS(&heapCPU));
 	}
 
 	auto gpuStart = onnxGPUResource->Heap->GetGPUDescriptorHandleForHeapStart();
 	auto cpuGPU = onnxGPUResource->Heap->GetCPUDescriptorHandleForHeapStart();
-	//auto cpuOnly = heapCPU->GetCPUDescriptorHandleForHeapStart();
 	const UINT inc = dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	auto nthGPU = [&](UINT i) { auto h = gpuStart; h.ptr += i * inc; return h; };
 	auto nthCPU_GPU = [&](UINT i) { auto h = cpuGPU;  h.ptr += i * inc; return h; };
-	//auto nthCPUONLY = [&](UINT i) { auto h = cpuOnly; h.ptr += i * inc; return h; };
 
 	// (0) Scene SRV
 	{

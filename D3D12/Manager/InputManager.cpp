@@ -9,6 +9,8 @@ bool InputManager::Init()
 		setKeyUp(i, false);
 		setKeyDown(i, false);
 
+		_keyToggle[i] = isToggleKey(i);
+
 		Delegate toggleDel;
 		m_ToggleDelegate.push_back(toggleDel);
 	}

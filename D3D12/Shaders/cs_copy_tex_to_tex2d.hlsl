@@ -1,6 +1,6 @@
 // cs_copy_tex_to_tex2d.hlsl
 Texture2D<float4> Src : register(t0);
-SamplerState gSamp : register(s0); // ★ 추가
+SamplerState gSamp : register(s0); 
 RWTexture2D<unorm float4> Dst : register(u0);
 
 cbuffer CB : register(b0)
@@ -15,6 +15,6 @@ void main(uint3 id : SV_DispatchThreadID)
         return;
 
     float2 uv = (id.xy + 0.5) / float2(W, H);
-    float4 c = Src.SampleLevel(gSamp, uv, 0); // ★ gSamp 사용
+    float4 c = Src.SampleLevel(gSamp, uv, 0);
     Dst[id.xy] = c;
 }

@@ -7,7 +7,6 @@ struct VSOut
 
 VSOut main(uint vid : SV_VertexID)
 {
-    // 풀스크린 삼각형 (좌하, 좌상+2h, 우하+2w)
     float2 pos;
     if (vid == 0)
         pos = float2(-1.0, -1.0);
@@ -19,7 +18,6 @@ VSOut main(uint vid : SV_VertexID)
     VSOut o;
     o.pos = float4(pos, 0.0, 1.0);
 
-    // ★ 핵심: y 뒤집기 (NDC y↑, tex v↓)
     o.uv = float2(pos.x * 0.5 + 0.5,
                   -pos.y * 0.5 + 0.5);
 

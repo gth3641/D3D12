@@ -1,8 +1,11 @@
 #include "OnnxService_BlindVideo.h"
 #include "Util/OnnxDefine.h"
+
 #include "Manager/OnnxManager.h"
 #include "Manager/DirectXManager.h"
+
 #include "Support/Image.h"
+#include "Support/Shader.h"
 
 enum class NormProfile { Raw01, ImageNet, CaffeBGR255, TanhIn };
 static NormProfile kProfile = NormProfile::Raw01; 
@@ -12,8 +15,8 @@ static bool kUseBGR = false;
 // ====== 새로 추가 ======
 static void CreateStructuredFloatBufferAndViews(
 	ID3D12Device* dev,
-	UINT tensorW, UINT tensorH, UINT channels,                 // 예: 3 or 6
-	ComPointer<ID3D12Resource>& outBuffer,                     // 결과 버퍼 (DEFAULT, UAV)
+	UINT tensorW, UINT tensorH, UINT channels,                 
+	ComPointer<ID3D12Resource>& outBuffer,                     
 	D3D12_CPU_DESCRIPTOR_HANDLE uavCPU, D3D12_GPU_DESCRIPTOR_HANDLE uavGPU,
 	D3D12_CPU_DESCRIPTOR_HANDLE srvCPU, D3D12_GPU_DESCRIPTOR_HANDLE srvGPU)
 {
@@ -34,9 +37,9 @@ static void CreateStructuredFloatBufferAndViews(
 	u.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
 	u.Format = DXGI_FORMAT_UNKNOWN;
 	u.Buffer.FirstElement = 0;
-	u.Buffer.NumElements = (UINT)numFloats;                 // ★ float 개수 그대로
-	u.Buffer.StructureByteStride = sizeof(float);           // ★ Structured (stride = 4)
-	u.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;            // ★ RAW 금지
+	u.Buffer.NumElements = (UINT)numFloats;            
+	u.Buffer.StructureByteStride = sizeof(float);      
+	u.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;       
 	dev->CreateUnorderedAccessView(buf.Get(), nullptr, &u, uavCPU);
 
 	// 3) SRV(Structured<float>)  디버그/후처리에서 읽을 때 사용
@@ -45,9 +48,9 @@ static void CreateStructuredFloatBufferAndViews(
 	s.Format = DXGI_FORMAT_UNKNOWN;
 	s.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	s.Buffer.FirstElement = 0;
-	s.Buffer.NumElements = (UINT)numFloats;                 // ★ float 개수 그대로
-	s.Buffer.StructureByteStride = sizeof(float);           // ★ Structured (stride = 4)
-	s.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;            // ★ RAW 금지
+	s.Buffer.NumElements = (UINT)numFloats;             
+	s.Buffer.StructureByteStride = sizeof(float);       
+	s.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;        
 	dev->CreateShaderResourceView(buf.Get(), &s, srvCPU);
 
 	outBuffer = std::move(buf);
@@ -125,11 +128,11 @@ void OnnxService_BlindVideo::RecordPreprocess_BlindVideo(
 	if (ptValid) 
 		flags |= PRE_PT_VALID; // PtValid
 
-	// HLSL과 일치하는 CB
-	struct CB {
-		UINT TensorW, TensorH, C, Flags;
-		UINT _pad0, _pad1, _pad2, _pad3; // 안씀
-	} cb{ inW, inH, inC, flags, 0,0,0,0 };
+	PreCBData cb
+	{ 
+		inW, inH, inC, flags, 
+		0, 0, 0, 0 
+	};
 
 	void* p = nullptr;
 	onnxGPUResource->CB->Map(0, nullptr, &p);
@@ -234,12 +237,7 @@ void OnnxService_BlindVideo::RecordPostprocess_BlindVideo(
 		break;
 	}
 
-	// CB (Src/Dst dims + /255)
-	struct CBData {
-		UINT SrcW, SrcH, SrcC, Flags;
-		UINT DstW, DstH, _r1, _r2;
-		float Gain, Bias, _f0, _f1;
-	} cb{ srcW, srcH, srcC, flags,
+	PostCBData cb{ srcW, srcH, srcC, flags,
 		  onnxResource->Width, onnxResource->Height, 0,0,
 		  1.0f, 0.0f, 0,0 };
 	{

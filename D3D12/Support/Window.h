@@ -26,16 +26,17 @@ public:
 	D3D12_VIEWPORT CreateViewport();
 	RECT CreateScissorRect();
 
-	inline bool ShouldClose() const { return m_shouldClose; }
-	inline bool ShouldResize() const { return m_shouldResize; }
-	inline bool IsFullscreen() const { return m_isFullscreen; }
-	inline bool IsMouseLock() const { return m_mouseLock; }
-	inline Delegate& GetDelegate() { return m_WindowDelegate; }
-	inline POINT GetMousePos() const { return m_ptMouse; }
-	inline POINT GetMouseMove() const { return m_ptMouseMove; }
+	inline bool ShouldClose() const			{ return m_shouldClose; }
+	inline bool ShouldResize() const		{ return m_shouldResize; }
+	inline bool ShouldChangeOnnx() const	{ return m_shouldChangeOnnx; }
+	inline bool IsFullscreen() const		{ return m_isFullscreen; }
+	inline bool IsMouseLock() const			{ return m_mouseLock; }
+	inline Delegate& GetDelegate()			{ return m_WindowDelegate; }
+	inline POINT GetMousePos() const		{ return m_ptMouse; }
+	inline POINT GetMouseMove() const		{ return m_ptMouseMove; }
 
-	inline UINT GetWidth() const { return m_width; }
-	inline UINT GetHeight() const { return m_height; }
+	inline UINT GetWidth() const			{ return m_width; }
+	inline UINT GetHeight() const			{ return m_height; }
 
 	static constexpr size_t FrameCount = 2;
 	static constexpr size_t GetFrameCount()
@@ -68,12 +69,21 @@ private:
 
 	void MouseUpdate(float deltaTime);
 
+	void UpdateResize();
+	void UpdateChangeOnnx();
+
+	void OnChangedAdaINModel();
+	void OnChangedFastStyleTransferModel();
+	void OnChangedSANetModel();
+	void OnChangedReCoNetModel();
+
 private:
 	ATOM m_wndClass = 0;
 	HWND m_window = nullptr;
 	bool m_shouldClose = false;
 
 	bool m_shouldResize = false;
+	bool m_shouldChangeOnnx = false;
 	UINT m_width = 1920;
 	UINT m_height = 1080;
 

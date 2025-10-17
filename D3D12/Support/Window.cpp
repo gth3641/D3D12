@@ -1,6 +1,7 @@
 #include "Window.h"
 #include "Manager/OnnxManager.h"
 #include "Manager/DirectXManager.h"
+#include "Manager/ImageManager.h"
 #include "Manager/InputManager.h"
 #include "Util/Util.h"
 #include <comdef.h>
@@ -119,27 +120,112 @@ bool DXWindow::Init()
 		return false;
 	}
 
-	DX_INPUT.AddDelegate(VK_LCONTROL, this, &DXWindow::SetMouseLock);
+	DX_INPUT.AddDelegate(VK_F1, this, &DXWindow::OnChangedAdaINModel);
+	DX_INPUT.AddDelegate(VK_F2, this, &DXWindow::OnChangedFastStyleTransferModel);
+	DX_INPUT.AddDelegate(VK_F3, this, &DXWindow::OnChangedSANetModel);
+	DX_INPUT.AddDelegate(VK_F4, this, &DXWindow::OnChangedReCoNetModel);
 	SetMouseLock();
+
+
 
 	return true;
 }
 
 void DXWindow::Update(float deltaTime)
 {
-	if (DX_WINDOW.ShouldResize())
-	{
-		DX_CONTEXT.Flush(DXWindow::GetFrameCount());
-
-		DX_WINDOW.Resize();
-		DX_MANAGER.Resize();
-
-		DX_CONTEXT.Flush(DXWindow::GetFrameCount());
-	}
+	UpdateChangeOnnx();
+	UpdateResize();
 
 	MouseUpdate(deltaTime);
 	LogicUpdate(deltaTime);
 }
+
+void DXWindow::UpdateResize()
+{
+	if (ShouldResize())
+	{
+		DX_CONTEXT.Flush(DXWindow::GetFrameCount());
+
+		Resize();
+		DX_MANAGER.Resize();
+
+		DX_CONTEXT.Flush(DXWindow::GetFrameCount());
+	}
+}
+
+void DXWindow::UpdateChangeOnnx()
+{
+	if (ShouldChangeOnnx())
+	{
+		DX_CONTEXT.Flush(DXWindow::GetFrameCount());
+
+		DX_MANAGER.Shutdown();
+		DX_IMAGE.Shutdown();
+		DX_ONNX.Shutdown();
+
+		if (DX_ONNX.Init(DX_ONNX.GetChangeOnnxType(), DX_CONTEXT.GetDevice(), DX_CONTEXT.GetCommandQueue()) == false)
+		{
+			m_shouldClose = true;
+			return;
+		}
+		DX_IMAGE.Init();
+		DX_MANAGER.Init();
+		{ auto* c = DX_CONTEXT.InitCommandList(); DX_MANAGER.UploadGPUResource(c); DX_CONTEXT.ExecuteCommandList(); }
+
+		Resize();
+		DX_MANAGER.Resize();
+
+		DX_CONTEXT.Flush(DXWindow::GetFrameCount());
+
+		m_shouldChangeOnnx = false;
+	}
+}
+
+void DXWindow::OnChangedAdaINModel()
+{
+	if (DX_ONNX.GetOnnxType() == OnnxType::AdaIN)
+	{
+		return;
+	}
+
+	DX_ONNX.SetChangeOnnxType(OnnxType::AdaIN);
+	m_shouldChangeOnnx = true;
+}
+
+void DXWindow::OnChangedFastStyleTransferModel()
+{
+	if (DX_ONNX.GetOnnxType() == OnnxType::FastNeuralStyle)
+	{
+		return;
+	}
+
+	DX_ONNX.SetChangeOnnxType(OnnxType::FastNeuralStyle);
+	m_shouldChangeOnnx = true;
+}
+
+void DXWindow::OnChangedSANetModel()
+{
+	if (DX_ONNX.GetOnnxType() == OnnxType::Sanet)
+	{
+		return;
+	}
+
+	DX_ONNX.SetChangeOnnxType(OnnxType::Sanet);
+	m_shouldChangeOnnx = true;
+}
+
+void DXWindow::OnChangedReCoNetModel()
+{
+	if (DX_ONNX.GetOnnxType() == OnnxType::ReCoNet)
+	{
+		return;
+	}
+
+	DX_ONNX.SetChangeOnnxType(OnnxType::ReCoNet);
+	m_shouldChangeOnnx = true;
+}
+
+
 
 void DXWindow::Present()
 {

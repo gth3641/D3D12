@@ -12,7 +12,8 @@
 
 bool OnnxRunner_BlindVideo::Init(const std::wstring& modelPath, ID3D12Device* dev, ID3D12CommandQueue* queue)
 {
-    m_Dev = dev; m_Queue = queue;
+    m_Dev = dev; 
+    m_Queue = queue;
 
     ComPointer<IDMLDevice> dml;
     THROW_IF_FAILED(DMLCreateDevice(m_Dev, DML_CREATE_DEVICE_FLAG_NONE, IID_PPV_ARGS(&dml)));
@@ -59,13 +60,17 @@ bool OnnxRunner_BlindVideo::PrepareIO(ID3D12Device* dev, UINT contentW, UINT con
     const UINT W = (contentW / 4) * 4;
     const UINT H = (contentH / 4) * 4;
 
-    auto inShapeContent = m_InShapeContent; // 보통 [-1,6,-1,-1] 또는 [-1,-1,-1,-1]
-    FillDynamicNCHW(inShapeContent, 1, /*C=*/6, (int)H, (int)W);   // ★ C=6
+    auto inShapeContent = m_InShapeContent;
+    FillDynamicNCHW(inShapeContent, 1, /*C=*/6, (int)H, (int)W); 
     m_InBytesContent = BytesOf(inShapeContent, sizeof(float));
     if (m_InBytesContent == 0) return false;
 
-    // 이전 입력 자원 정리
-    if (m_InAllocContent) { m_DmlApi->FreeGPUAllocation(m_InAllocContent); m_InAllocContent = nullptr; }
+    if (m_InAllocContent) 
+    {
+        m_DmlApi->FreeGPUAllocation(m_InAllocContent); 
+        m_InAllocContent = nullptr; 
+    }
+
     m_InputBufContent.Release();
 
     // 입력 버퍼 생성 (DEFAULT + UAV)
@@ -76,7 +81,7 @@ bool OnnxRunner_BlindVideo::PrepareIO(ID3D12Device* dev, UINT contentW, UINT con
     m_InputBufContent->SetName(L"ORT_Input_Content");
     Ort::ThrowOnError(m_DmlApi->CreateGPUAllocationFromD3DResource(m_InputBufContent.Get(), &m_InAllocContent));
 
-    // 입력 텐서(DML) 멤버 보관
+    // 입력 텐서(DML)
     m_InShapeContent = std::move(inShapeContent);
     m_InTensorDML = Ort::Value::CreateTensor(
         miDml_, m_InAllocContent, m_InBytesContent,
@@ -91,7 +96,7 @@ bool OnnxRunner_BlindVideo::PrepareIO(ID3D12Device* dev, UINT contentW, UINT con
     m_OutShape.clear();
     m_OutputBound = false;
 
-    // ★ 멤버 IoBinding 재세팅: 입력 바인딩, 출력은 "발견 모드"
+    // 멤버 IoBinding 재세팅
     m_Binding->ClearBoundInputs();
     m_Binding->ClearBoundOutputs();
     m_Binding->BindInput(m_InNameContent.c_str(), m_InTensorDML);
@@ -109,13 +114,14 @@ bool OnnxRunner_BlindVideo::Run()
         if (m_InBytesContent != bytesOf(m_InShapeContent)) return false;
 
         // 1) 아직 출력이 바인딩되지 않았다면: 1회 shape discovery
-        if (!m_OutputBound) {
-            m_Session->Run(Ort::RunOptions{ nullptr }, *m_Binding); // 임시 출력에 실행
+        if (!m_OutputBound) 
+        {
+            m_Session->Run(Ort::RunOptions{ nullptr }, *m_Binding);
 
             // shape 확인
             auto outs = m_Binding->GetOutputValues();
             auto info = outs[0].GetTensorTypeAndShapeInfo();
-            auto shape = info.GetShape(); // [1,3,H,W] 기대
+            auto shape = info.GetShape(); 
 
             // 내 출력 버퍼/텐서 준비
             AllocateOutputForShape(shape);
@@ -124,14 +130,11 @@ bool OnnxRunner_BlindVideo::Run()
                 m_OutShape.data(), m_OutShape.size(),
                 ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
 
-            // 멤버 바인딩을 "고정 바인딩"으로 전환
-            m_Binding->ClearBoundOutputs(); // 입력은 그대로 유지
+            // 멤버 바인딩을 고정 바인딩으로 전환
+            m_Binding->ClearBoundOutputs(); 
             m_Binding->BindOutput(m_OutName.c_str(), m_OutTensorDML);
 
             m_OutputBound = true;
-
-            // 선택: 같은 프레임에 한 번 더 실행해 실제 출력까지 얻기
-            // (필요 없으면 이 호출을 생략해도 됨)
             m_Session->Run(Ort::RunOptions{ nullptr }, *m_Binding);
             return true;
         }
@@ -151,14 +154,28 @@ bool OnnxRunner_BlindVideo::Run()
 
 void OnnxRunner_BlindVideo::ResizeIO(ID3D12Device* dev, UINT contentW, UINT contentH, UINT styleW, UINT styleH)
 {
-    if (m_InAllocContent) { m_DmlApi->FreeGPUAllocation(m_InAllocContent); m_InAllocContent = nullptr; }
-    if (m_OutAlloc) { m_DmlApi->FreeGPUAllocation(m_OutAlloc);       m_OutAlloc = nullptr; }
+    if (m_InAllocContent) 
+    {
+        m_DmlApi->FreeGPUAllocation(m_InAllocContent);
+        m_InAllocContent = nullptr; 
+    }
+
+    if (m_OutAlloc) 
+    { 
+        m_DmlApi->FreeGPUAllocation(m_OutAlloc);
+        m_OutAlloc = nullptr; 
+    }
 
     m_InputBufContent.Release();
     m_OutputBuf.Release();
 
-    // (안전) 스타일 자원 정리
-    if (m_InAllocStyle) { m_DmlApi->FreeGPUAllocation(m_InAllocStyle);   m_InAllocStyle = nullptr; }
+    // 스타일 자원 정리
+    if (m_InAllocStyle) 
+    {
+        m_DmlApi->FreeGPUAllocation(m_InAllocStyle);   
+        m_InAllocStyle = nullptr;
+    }
+
     m_InputBufStyle.Release();
     m_InBytesStyle = 0;
     m_InShapeStyle.clear();
@@ -169,14 +186,27 @@ void OnnxRunner_BlindVideo::ResizeIO(ID3D12Device* dev, UINT contentW, UINT cont
 
 void OnnxRunner_BlindVideo::Shutdown()
 {
-    if (m_InAllocContent) { m_DmlApi->FreeGPUAllocation(m_InAllocContent); m_InAllocContent = nullptr; }
-    if (m_OutAlloc) { m_DmlApi->FreeGPUAllocation(m_OutAlloc);       m_OutAlloc = nullptr; }
+    if (m_InAllocContent) 
+    {
+        m_DmlApi->FreeGPUAllocation(m_InAllocContent); 
+        m_InAllocContent = nullptr; 
+    }
+
+    if (m_OutAlloc) 
+    {
+        m_DmlApi->FreeGPUAllocation(m_OutAlloc);       
+        m_OutAlloc = nullptr; 
+    }
 
     m_InputBufContent.Release();
     m_OutputBuf.Release();
 
-    // (안전) 스타일 자원 및 메타 초기화
-    if (m_InAllocStyle) { m_DmlApi->FreeGPUAllocation(m_InAllocStyle);   m_InAllocStyle = nullptr; }
+    if (m_InAllocStyle) 
+    {
+        m_DmlApi->FreeGPUAllocation(m_InAllocStyle); 
+        m_InAllocStyle = nullptr; 
+    }
+
     m_InputBufStyle.Release();
     m_InBytesStyle = 0;
     m_InShapeStyle.clear();
@@ -199,7 +229,12 @@ void OnnxRunner_BlindVideo::AllocateOutputForShape(const std::vector<int64_t>& s
     m_OutBytes = n * sizeof(float);
 
     // 기존 출력 리소스 해제
-    if (m_OutAlloc) { m_DmlApi->FreeGPUAllocation(m_OutAlloc); m_OutAlloc = nullptr; }
+    if (m_OutAlloc) 
+    { 
+        m_DmlApi->FreeGPUAllocation(m_OutAlloc); 
+        m_OutAlloc = nullptr; 
+    }
+
     m_OutputBuf.Release();
 
     // 새 출력 버퍼 생성
