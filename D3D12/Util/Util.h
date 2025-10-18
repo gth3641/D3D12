@@ -18,6 +18,7 @@ struct Vtx
 { 
     DirectX::XMFLOAT3 pos; 
     DirectX::XMFLOAT2 uv; 
+    DirectX::XMFLOAT3 nrm;
 };
 
 struct Triangle
@@ -102,5 +103,17 @@ struct Delegate
         }
     }
 
-
+    void Broadcast()
+    {
+        for (auto iter = delegateMap.begin(); iter != delegateMap.end(); ++iter)
+        {
+            if (iter->first != nullptr)
+            {
+                for (int i = 0; i < iter->second.size(); ++i)
+                {
+                    iter->second[i]();
+                }
+            }
+        }
+    }
 };

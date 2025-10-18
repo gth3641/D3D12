@@ -20,17 +20,17 @@
 #include <cmath>
 
 #define DEBUG_DUMP 0
-#define DEBUG_TIME 1
+#define DEBUG_TIME 0
 
 #if DEBUG_TIME
 #define DEBUG_TIME_EXPR(OUT_NAME)\
     endSecStart = std::chrono::system_clock::now() - startTime;\
     Util::Print((float)endSecStart.count(), OUT_NAME);
 #else
-#define DEBUG_TIME_EXP(OUT_NAME)  ((void)0)
+#define DEBUG_TIME_EXPR(OUT_NAME)  ((void)0)
 #endif
 
-constexpr OnnxType ONNX_TYPE = OnnxType::FastNeuralStyle;
+constexpr OnnxType ONNX_TYPE = OnnxType::WCT2;
 
 void Shutdown()
 {
@@ -91,6 +91,7 @@ int main()
 #endif
 		{
 			ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
+			 
 			DX_MANAGER.RenderOffscreen(cmd);
 			DX_MANAGER.RecordPreprocess(cmd);          
 			DX_CONTEXT.ExecuteCommandList();        

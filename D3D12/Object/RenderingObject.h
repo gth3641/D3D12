@@ -20,7 +20,6 @@ public: // Functions
 	const std::vector<Triangle>& GetTriangleVector() const { return m_Triangle; }
 	Triangle* GetTriagleByIndex(size_t index);
 	size_t GetTriangleIndex() const { return m_Triangle.size(); }
-	UINT64 GetTestIndex() const { return m_TestIndex; }
 
 	std::shared_ptr<Image> GetImage() { return m_Image; }
 
@@ -52,7 +51,7 @@ protected: // Variables
 	ComPointer<ID3D12Resource2> m_UploadBuffer;
 	ComPointer<ID3D12Resource2> m_VertexBuffer;
 
-	INT64 m_TestIndex = 0;
+	//INT64 m_TestIndex = 0;
 
 	D3D12_PLACED_SUBRESOURCE_FOOTPRINT m_TexFootprint{};
 	UINT   m_TexNumRows = 0;
@@ -73,6 +72,9 @@ protected: // Variables
 	std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> m_MipFootprints;
 	std::vector<UINT>  m_MipNumRowsV;
 	std::vector<UINT64> m_MipRowSizeInBytesV;
+
+
+	Delegate delegate;
 
 };
 

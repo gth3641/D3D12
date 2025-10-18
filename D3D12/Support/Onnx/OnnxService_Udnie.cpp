@@ -41,8 +41,8 @@ void OnnxService_Udnie::RecordPreprocess_Udnie(
 		if (inC == 0) inC = 3;
 	}
 
-	UINT dstW = onnxResource->Width;                 // Ã¢ Æø(= OnnxTex Æø)
-	UINT dstH = onnxResource->Height;                // Ã¢ ³ôÀÌ(= OnnxTex ³ôÀÌ)
+	UINT dstW = onnxResource->Width;            
+	UINT dstH = onnxResource->Height;           
 
 	PreCBData cb
 	{ 

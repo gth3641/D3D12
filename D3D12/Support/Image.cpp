@@ -1,9 +1,11 @@
 #include "Image.h"
 #include "Manager/DirectXManager.h"
+#include "Manager/ImageManager.h"
 #include "D3D/DXContext.h"
 
 Image::~Image()
 {
+    DX_IMAGE.ReturnTextureIndex(this);
 	m_Texture.Release();
 }
 
@@ -12,6 +14,8 @@ void Image::ImageLoad(const std::filesystem::path& imagePath)
 	ImageLoader::LoadImageFromDisk(imagePath, m_TextureData);
 	m_TextureStride = m_TextureData.width * ((m_TextureData.bpp + 7) / 8);
 	m_TextureSize = (m_TextureData.height * m_TextureStride);
+    m_Index = DX_IMAGE.GetTextureIndex();
+    //UploadTextureBuffer();
 }
 
 void Image::UploadTextureBuffer()

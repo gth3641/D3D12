@@ -364,3 +364,6 @@ FodyWeavers.xsd
 
 #Onnx
 *.onnx
+
+# Resources
+Resources/

@@ -166,5 +166,6 @@ void OnnxManager::InitOnnxRunner(const std::wstring& modelPath, ID3D12Device* de
 		m_OnnxType = OnnxType::None;
 	}
 
+    m_ChangeOnnxType = m_OnnxType;
     m_Initialized = true;
 }

@@ -72,6 +72,7 @@ private:
 	void UpdateResize();
 	void UpdateChangeOnnx();
 
+	void OnChangedNormal();
 	void OnChangedAdaINModel();
 	void OnChangedFastStyleTransferModel();
 	void OnChangedSANetModel();

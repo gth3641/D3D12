@@ -9,13 +9,13 @@ RenderingObject::RenderingObject()
 
 RenderingObject::~RenderingObject()
 {
+	delegate.Broadcast();
 	m_UploadBuffer.Release();
 	m_VertexBuffer.Release();
 }
 
 bool RenderingObject::Init(const std::filesystem::path& imagePath, UINT64 index)
 {
-	m_TestIndex = index;
 	AddTexture(imagePath);
 	UploadTextureBuffer();
 	CreateSRV();
@@ -166,6 +166,13 @@ void RenderingObject::UploadTextureBuffer()
 		m_MipRowSizeInBytesV.data(),
 		&uploadSize);
 
+	if (isRGBA8 && m_MipNumRowsV[0] != td.height) {
+		char buf[256];
+		sprintf_s(buf, "[UploadTextureBuffer] NumRows[0]=%u, height=%u (mismatch)\n",
+			m_MipNumRowsV[0], (UINT)td.height);
+		OutputDebugStringA(buf);
+	}
+
 	// (D) VB 사이즈 계산
 	m_VBSize = 0;
 	for (size_t i = 0, n = GetTriangleIndex(); i < n; ++i)
@@ -250,7 +257,6 @@ void RenderingObject::UploadTextureBuffer()
 	UpdateVertexBuffer(dst);
 
 	m_UploadBuffer->Unmap(0, nullptr);
-
 	
 	m_Image->UploadTextureBuffer();
 	mTexState = D3D12_RESOURCE_STATE_COPY_DEST;
@@ -275,7 +281,7 @@ void RenderingObject::CreateSRV()
 	srv.Texture2D.PlaneSlice = 0;
 	srv.Texture2D.ResourceMinLODClamp = 0.f;
 
-	DX_CONTEXT.GetDevice()->CreateShaderResourceView(m_Image->GetTexture(), &srv, DX_IMAGE.GetCPUDescriptorHandle(m_TestIndex));
+	DX_CONTEXT.GetDevice()->CreateShaderResourceView(m_Image->GetTexture(), &srv, DX_IMAGE.GetCPUDescriptorHandle(m_Image->GetIndex()));
 
 }
 

@@ -3,6 +3,7 @@
 #include "D3D/DXContext.h"
 #include "Support/ComPointer.h"
 #include "Support/ImageLoader.h"
+#include "Support/SponzaModel.h"
 #include "Util/Util.h"
 #include "Util/OnnxDefine.h"
 
@@ -29,7 +30,7 @@ struct Camera {
     XMFLOAT3 up{ 0, 1.0f, 0 };          // 보통 월드업
     float fovY = XM_PIDIV4;
     float nearZ = 0.1f;
-    float farZ = 500.0f;
+    float farZ = 5000.0f;
     float yaw = 0.0f;                        // +Y축 기준 회전
     float pitch = 0.0f;                        // X축 기준 회전(위/아래)
 };
@@ -132,12 +133,6 @@ private: // Variables
     std::unique_ptr<RenderingObject3D> m_PlaneObject;
     std::unique_ptr<RenderingObject3D> m_CubeObject;
 
-    //RenderingObject RenderingObject1;
-    //RenderingObject RenderingObject2;
-    //RenderingObject m_StyleObject;
-    //RenderingObject3D m_PlaneObject;
-    //RenderingObject3D m_CubeObject;
-
     ComPointer<ID3D12RootSignature> m_RootSignature;
     ComPointer<ID3D12RootSignature> m_BlitRS2;
     ComPointer<ID3D12PipelineState> m_PipelineStateObj;
@@ -184,7 +179,7 @@ private:// Functions
     bool InitDepth(UINT w, UINT h);
     void DestroyDepth();
 
-private: // Variables
+public:
     // PSO / RootSig
     ComPointer<ID3D12PipelineState>     mCubePSO;
     ComPointer<ID3D12RootSignature>     mCubeRootSig;
@@ -197,6 +192,55 @@ private: // Variables
     // 뷰/프로젝션
     float mAngle = 0.f;
     float mAspect = 16.f / 9.f;
+
+public:
+    DirectX::XMFLOAT3 GetLightDirWS() const;
+    void TransitionShadowToDSV(ID3D12GraphicsCommandList7* cmd);
+
+    DirectX::XMMATRIX GetLightViewProj();
+
+    bool InitShadowMap(UINT size =2048);
+
+    void DestroyShadowMap();
+
+    bool InitShadowPipeline();
+
+    void RenderShadowPass(ID3D12GraphicsCommandList7* cmd);
+    void TransitionShadowToSRV(ID3D12GraphicsCommandList7* cmd);
+
+    static void BuildMVPs(
+        const DirectX::XMMATRIX& M,
+        const Camera& cam,
+        float aspect,
+        const DirectX::XMMATRIX& lightVP,
+        DirectX::XMFLOAT4X4& outMVP_T,
+        DirectX::XMFLOAT4X4& outLightVP_T);
+
+    // === Shadow map state ===
+    ComPointer<ID3D12Resource> mShadowMap;
+    ComPointer<ID3D12DescriptorHeap> mShadowDsvHeap;
+    D3D12_CPU_DESCRIPTOR_HANDLE mShadowDSV{};
+    UINT mShadowSize = 2048;
+
+    ComPointer<ID3D12DescriptorHeap> mSrvHeap /* DX_IMAGE의 GPU-visible heap을 쓰고 있다면 생략 가능 */;
+    D3D12_CPU_DESCRIPTOR_HANDLE mShadowSRV_CPU{};
+    D3D12_GPU_DESCRIPTOR_HANDLE mShadowSRV_GPU{};
+    UINT mShadowSrvIndex = 5; // DX_IMAGE가 0..4까지 쓰는 듯하니 임시로 5번 슬롯 사용(필요시 바꿔)
+
+    ComPointer<ID3D12RootSignature> mShadowRS;
+    ComPointer<ID3D12PipelineState>  mShadowPSO;
+
+    // 섀도우 SRV는 “연속 2개(t0=albedo, t1=shadow)” 테이블이 필요.
+    ComPointer<ID3D12DescriptorHeap> mObjSrvHeap2; // shader-visible, 2개
+    D3D12_CPU_DESCRIPTOR_HANDLE mObjSrvCPU{};
+    D3D12_GPU_DESCRIPTOR_HANDLE mObjSrvGPU{};
+
+    D3D12_RESOURCE_STATES mShadowState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+
+    std::unique_ptr<SponzaModel> mSponza;
+
+    ID3D12Resource* GetShadowMap() { return mShadowMap.Get(); }
+    UINT GetShadowSize() const { return mShadowSize; }
 
 };
 

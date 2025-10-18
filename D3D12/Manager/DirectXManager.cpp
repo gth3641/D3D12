@@ -15,10 +15,21 @@
 #include <iostream>
 #include <numbers> 
 
-#define MOVE_SPEED 10
+#define MOVE_SPEED 50
+#define CAM_MOVE_SPEED 0.05f
 
 Shader vertexShader("VertexShader.cso");
 Shader pixelShader("PixelShader.cso");
+
+struct ShadowCamera {
+	DirectX::XMFLOAT3 dir{ 0.5f, -1.0f, 0.3f };
+	float yaw = 0.0f, pitch = -0.9f;
+	float orthoExtent = 60.0f; // 바닥 평면이 ±50m니까 60m로 커버
+	float zNear = 0.1f, zFar = 150.0f;
+};
+ShadowCamera mLight;
+
+
 
 static const char* g_VS = R"(
 cbuffer MVP : register(b0) { float4x4 uMVP; };
@@ -41,9 +52,130 @@ SamplerState gSmp : register(s0);
 struct PSIn { float4 pos : SV_Position; float2 uv : TEXCOORD0; };
 float4 main(PSIn i) : SV_Target
 {
-    return gTex.Sample(gSmp, i.uv);
+    float4 c = gTex.Sample(gSmp, i.uv);
+
+    clip(c.a - 0.001f);
+
+    return float4(c.rgb, 1.0f);
 }
 )";
+
+// g_VS_Shadow
+static const char* g_VS_Shadow = R"(
+cbuffer CB : register(b0){
+  float4x4 uMVP;        // transposed
+  float4x4 uLightVP;    // transposed
+  float4x4 uWorld;      // transposed
+  float4   uLightDir;   // .xyz
+};
+
+struct VSIn  { float3 pos:POSITION; float2 uv:TEXCOORD0; float3 nrm:NORMAL; };
+struct VSOut {
+  float4 pos : SV_Position;
+  float2 uv  : TEXCOORD0;
+  float4 sh  : TEXCOORD1;  // shadow coords
+  float3 N   : TEXCOORD2;  // world normal
+};
+
+VSOut main(VSIn i){
+  VSOut o;
+
+  // 월드 위치: (로컬) * (transposed world)
+  float4 wp = mul(float4(i.pos,1), uWorld);
+
+  // 화면 변환 (transposed)
+  o.pos = mul(wp, uMVP);
+  o.uv  = i.uv;
+
+  // 섀도우 좌표: (월드) * (transposed LightVP)
+  float4 lp = mul(wp, uLightVP);
+  float3 ndc = lp.xyz / lp.w;
+  o.sh = float4(ndc*0.5f + 0.5f, 1.0f);
+
+  // 노멀 변환: 벡터 * (transposed world)의 상단 3x3
+  // (SetGraphicsRoot32BitConstants로 넘길 때 transpose한 행렬을 쓰므로, vector*matrix가 맞습니다)
+  float3 n = mul(i.nrm, (float3x3)uWorld);
+  o.N = normalize(n);
+
+  return o;
+}
+)";
+
+
+// g_PS_ShadowPCF3x3
+static const char* g_PS_ShadowPCF3x3 = R"(
+Texture2D          gAlbedo : register(t0);
+Texture2D<float>   gShadow : register(t1);
+SamplerState             gSmp : register(s0);
+SamplerComparisonState   gCmp : register(s1);
+
+cbuffer CB : register(b0){
+  float4x4 uMVP;
+  float4x4 uLightVP;
+  float4x4 uWorld;
+  float4   uLightDir;   // .xyz
+}
+
+struct PSIn {
+  float4 pos:SV_Position;
+  float2 uv :TEXCOORD0;
+  float4 sh :TEXCOORD1;
+  float3 N  :TEXCOORD2;
+};
+
+float PCF3x3(float2 uv, float refZ, float2 texel)
+{
+    float a = 0.0f;
+    [unroll] for(int y=-1;y<=1;++y){
+        [unroll] for(int x=-1;x<=1;++x){
+            a += gShadow.SampleCmpLevelZero(gCmp, uv + float2(x,y)*texel, refZ);
+        }
+    }
+    return a / 9.0f;
+}
+
+float4 main(PSIn i) : SV_Target
+{
+    float4 al = gAlbedo.Sample(gSmp, i.uv);
+
+    // ★ 알파 테스트 추가
+    clip(al.a - 0.001f);
+
+    float3 albedo = al.rgb;
+
+    float2 suv = i.sh.xy;
+    float  sdz = saturate(i.sh.z);
+
+    float3 N = normalize(i.N);
+    float3 L = normalize(-uLightDir.xyz);
+    float  NdotL = saturate(dot(N, L));
+
+    // Hemispheric ambient
+    const float3 skyColor    = float3(0.6, 0.7, 1.0);
+    const float3 groundColor = float3(0.3, 0.25, 0.2);
+    const float  hemiAmt     = 0.3;
+
+    float hemi = 0.5 + 0.5 * N.y;
+    float3 ambient = lerp(groundColor, skyColor, hemi) * hemiAmt;
+
+    if(any(suv < 0.0f) || any(suv > 1.0f))
+    {
+        float3 lit = albedo * (ambient + NdotL);
+        return float4(lit, 1.0f);
+    }
+
+    const float  bias  = 0.0015f;
+    const float2 texel = 1.0f / float2(2048.0f, 2048.0f);
+    float vis = PCF3x3(suv, sdz - bias, texel);
+
+    float3 direct = albedo * (NdotL * vis);
+    float3 lit    = albedo * ambient + direct;
+
+    return float4(lit, 1.0f);
+}
+)";
+
+
 
 
 static inline DirectX::XMFLOAT3 DirFromYawPitchLH(float yaw, float pitch)
@@ -57,7 +189,7 @@ static inline DirectX::XMFLOAT3 DirFromYawPitchLH(float yaw, float pitch)
 	return d;
 }
 
-static inline DirectX::XMMATRIX MakeVP_Dir(const Camera& cam, float aspect)
+extern DirectX::XMMATRIX MakeVP_Dir(const Camera& cam, float aspect)
 {
 	XMVECTOR eye = XMLoadFloat3(&cam.pos);
 	XMVECTOR dir = XMVector3Normalize(XMLoadFloat3(&cam.dir));
@@ -207,6 +339,42 @@ static bool SafeCopyBufferToReadback(
 		return true;
 	}
 	return false;
+}
+
+extern DirectX::XMMATRIX MakeLightViewProj(const ShadowCamera& L, const DirectX::XMFLOAT3& focusWorld)
+{
+	using namespace DirectX;
+	XMFLOAT3 d = DirFromYawPitchLH(L.yaw, L.pitch);
+	XMVECTOR dir = XMVector3Normalize(XMLoadFloat3(&d));
+	// 라이트 위치를 포커스 지점(예: 플레이/장면 중심)에서 라이트 방향 반대로 약간 떨어뜨림
+	XMVECTOR focus = XMLoadFloat3(&focusWorld);
+	XMVECTOR eye = XMVectorSubtract(focus, XMVectorScale(dir, 50.0f));
+
+	XMVECTOR up = XMVectorSet(0, 1, 0, 0);
+	XMMATRIX V = XMMatrixLookAtLH(eye, focus, up);
+
+	float e = L.orthoExtent;
+	XMMATRIX P = XMMatrixOrthographicOffCenterLH(-e, +e, -e, +e, L.zNear, L.zFar);
+
+	return XMMatrixMultiply(V, P);
+}
+
+static inline void BuildMVPs_(
+	const DirectX::XMMATRIX& M,
+	const Camera& cam,
+	float aspect,
+	const DirectX::XMMATRIX& lightVP,
+	DirectX::XMFLOAT4X4& outMVP_T,
+	DirectX::XMFLOAT4X4& outLightVP_T)
+{
+	using namespace DirectX;
+	XMMATRIX VP = MakeVP_Dir(cam, aspect);
+
+	// ★ 화면용은 'VP만' (월드는 VS에서 wp 만들 때 한 번만)
+	XMStoreFloat4x4(&outMVP_T, XMMatrixTranspose(VP));
+
+	// ★ 섀도우 샘플용은 '순수 lightVP' (이미 그렇게 하고 계심)
+	XMStoreFloat4x4(&outLightVP_T, XMMatrixTranspose(lightVP));
 }
 
 D3D12_HEAP_PROPERTIES DirectXManager::GetHeapUploadProperties()
@@ -425,6 +593,7 @@ bool DirectXManager::Init()
 			return false;
 		}
 	}
+	mSponza = std::make_unique<SponzaModel>();
 
 	m_RenderingObject1 = std::make_unique<RenderingObject>();
 	m_RenderingObject2 = std::make_unique<RenderingObject>();
@@ -444,10 +613,17 @@ bool DirectXManager::Init()
 	CreateSimpleBlitPipeline(); // 새 전용 블릿 PSO 추가
 	InitCubePipeline();
 	CreateFullscreenQuadVB(w, h);
+	InitUploadRenderingObject();
+
+	mSponza->InitFromOBJ("./Resources/Sponza_B/sponza.obj",
+		"./Resources/Sponza_B/",
+		mCubePSO, mCubeRootSig);
 
 	SetVerticies();
-	InitUploadRenderingObject();
 	InitGeometry();
+
+	InitShadowMap(2048);
+	InitShadowPipeline();
 
 	CreateOnnxResources(w, h);
 
@@ -491,7 +667,7 @@ void DirectXManager::Update(float deltaTime)
 		frame -= 1500;
 	}
 
-	m_RenderingObject1->UploadCPUResource(false, true);
+	//m_RenderingObject1->UploadCPUResource(false, true);
 
 	mAngle += 1.0f * (1.0f / 60.0f); 
 
@@ -507,10 +683,16 @@ void DirectXManager::Update(float deltaTime)
 	{
 		const POINT& deltaPos = DX_WINDOW.GetMouseMove();
 
-		RotateCameraYawPitch(mCam, deltaPos.x * deltaTime * (0.01f), deltaPos.y * deltaTime * (-0.01f));
+		RotateCameraYawPitch(mCam, deltaPos.x * deltaTime * CAM_MOVE_SPEED, deltaPos.y * deltaTime * CAM_MOVE_SPEED * (-1.f));
 	}
 
-	MoveCamera_FPS(mCam, moveAxis_Y, moveAxis_X, 0.f, deltaTime, MOVE_SPEED);
+	float moveSpeed = MOVE_SPEED;
+	if (DX_INPUT.isStateKeyDown(VK_LSHIFT) == true)
+	{
+		moveSpeed *= 5;
+	}
+
+	MoveCamera_FPS(mCam, moveAxis_Y, moveAxis_X, 0.f, deltaTime, moveSpeed);
 }
 
 
@@ -540,11 +722,11 @@ void DirectXManager::RenderImage(ID3D12GraphicsCommandList7* cmd)
 	ID3D12DescriptorHeap* srvHeap = DX_IMAGE.GetSrvheap();
 	cmd->SetDescriptorHeaps(1, &srvHeap);
 
-	cmd->SetGraphicsRootDescriptorTable(2, DX_IMAGE.GetGPUDescriptorHandle(m_RenderingObject2->GetTestIndex()));
+	cmd->SetGraphicsRootDescriptorTable(2, DX_IMAGE.GetGPUDescriptorHandle(m_RenderingObject2->GetImage()->GetIndex()));
 	cmd->IASetVertexBuffers(0, 1, &vbv2);
 	cmd->DrawInstanced(m_RenderingObject2->GetVertexCount(), 1, 0, 0);
 
-	cmd->SetGraphicsRootDescriptorTable(2, DX_IMAGE.GetGPUDescriptorHandle(m_RenderingObject1->GetTestIndex()));
+	cmd->SetGraphicsRootDescriptorTable(2, DX_IMAGE.GetGPUDescriptorHandle(m_RenderingObject1->GetImage()->GetIndex()));
 	cmd->IASetVertexBuffers(0, 1, &vbv1);
 	cmd->DrawInstanced(m_RenderingObject1->GetVertexCount(), 1, 0, 0);
 
@@ -552,6 +734,8 @@ void DirectXManager::RenderImage(ID3D12GraphicsCommandList7* cmd)
 
 void DirectXManager::Shutdown()
 {
+	DestroyShadowMap();
+
 	m_RenderingObject1.release();
 	m_RenderingObject2.release();
 	m_StyleObject.release();
@@ -585,6 +769,7 @@ void DirectXManager::UploadGPUResource(ID3D12GraphicsCommandList7* cmdList)
 		return;
 	}
 
+	mSponza->UploadGPUResource(cmdList);
 	m_RenderingObject1->UploadGPUResource(cmdList);
 	m_RenderingObject2->UploadGPUResource(cmdList);
 	m_StyleObject->UploadGPUResource(cmdList);
@@ -951,59 +1136,71 @@ void DirectXManager::Debug_DumpBuffer(ID3D12Resource* src, const char* tag)
 
 bool DirectXManager::InitCubePipeline()
 {
-	// RS: b0(상수 16개), t0(SRV1), s0(정적 샘플러)
-	CD3DX12_DESCRIPTOR_RANGE1 rangeSRV(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0
+	CD3DX12_DESCRIPTOR_RANGE1 rangeSRV(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0); // t0=albedo, t1=shadow
 	CD3DX12_ROOT_PARAMETER1 params[2];
-	params[0].InitAsConstants(16, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);       // b0
-	params[1].InitAsDescriptorTable(1, &rangeSRV, D3D12_SHADER_VISIBILITY_PIXEL); // t0
+	params[0].InitAsConstants(52, 0, 0, D3D12_SHADER_VISIBILITY_ALL);       // ★ 32개
+	params[1].InitAsDescriptorTable(1, &rangeSRV, D3D12_SHADER_VISIBILITY_PIXEL);
 
-	D3D12_STATIC_SAMPLER_DESC samp{};
-	samp.Filter = D3D12_FILTER_ANISOTROPIC; 
-	samp.AddressU = samp.AddressV = samp.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-	samp.MaxAnisotropy = 8;                 // 8~16 권장
-	samp.MinLOD = 0.0f;
-	samp.MaxLOD = D3D12_FLOAT32_MAX;        //  모든 mip 사용 허용
-	samp.MipLODBias = 0.0f;                 // 필요하면 0.3~0.7로 약간 키워도 플리커 더 줄어듦
-	samp.ShaderRegister = 0; // s0
+	D3D12_STATIC_SAMPLER_DESC samp0{}; // albedo
+	samp0.Filter = D3D12_FILTER_ANISOTROPIC;
+	samp0.AddressU = samp0.AddressV = samp0.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	samp0.MaxAnisotropy = 8;
+	samp0.ShaderRegister = 0; // s0
+	samp0.MipLODBias = 0.0f;
+	samp0.MinLOD = 0.0f;
+	samp0.MaxLOD = D3D12_FLOAT32_MAX;
 
+	D3D12_STATIC_SAMPLER_DESC sampCmp{}; // shadow compare
+	sampCmp.Filter = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
+	sampCmp.AddressU = sampCmp.AddressV = sampCmp.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	sampCmp.ComparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+	sampCmp.ShaderRegister = 1; // s1
+
+	D3D12_STATIC_SAMPLER_DESC samplers[] = { samp0, sampCmp };
 
 	CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rsDesc;
-	rsDesc.Init_1_1(_countof(params), params, 1, &samp,
+	rsDesc.Init_1_1(_countof(params), params, _countof(samplers), samplers,
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
 	ComPointer<ID3DBlob> rsBlob, rsErr;
-	D3D12SerializeVersionedRootSignature(&rsDesc, &rsBlob, &rsErr);
-	DX_CONTEXT.GetDevice()->CreateRootSignature(
-		0, rsBlob->GetBufferPointer(), rsBlob->GetBufferSize(), IID_PPV_ARGS(&mCubeRootSig));
+	HRESULT hr = D3D12SerializeVersionedRootSignature(&rsDesc, &rsBlob, &rsErr);
+	if (FAILED(hr)) { if (rsErr) OutputDebugStringA((char*)rsErr->GetBufferPointer()); return false; }
 
-	// 셰이더(위에서 교체한 g_VS/g_PS 사용)
+	DX_CONTEXT.GetDevice()->CreateRootSignature(0, rsBlob->GetBufferPointer(), rsBlob->GetBufferSize(), IID_PPV_ARGS(&mCubeRootSig));
+
+	// VS/PS
 	ComPointer<ID3DBlob> vs, ps, err;
-	D3DCompile(g_VS, strlen(g_VS), nullptr, nullptr, nullptr, "main", "vs_5_1", 0, 0, &vs, &err);
-	D3DCompile(g_PS, strlen(g_PS), nullptr, nullptr, nullptr, "main", "ps_5_1", 0, 0, &ps, &err);
+	hr = D3DCompile(g_VS_Shadow, strlen(g_VS_Shadow), nullptr, nullptr, nullptr, "main", "vs_5_1", 0, 0, &vs, &err);
+	if (FAILED(hr)) { if (err) OutputDebugStringA((char*)err->GetBufferPointer()); return false; }
+	hr = D3DCompile(g_PS_ShadowPCF3x3, strlen(g_PS_ShadowPCF3x3), nullptr, nullptr, nullptr, "main", "ps_5_1", 0, 0, &ps, &err);
+	if (FAILED(hr)) { if (err) OutputDebugStringA((char*)err->GetBufferPointer()); return false; }
 
-	// 입력 레이아웃: POSITION + TEXCOORD
 	D3D12_INPUT_ELEMENT_DESC il[] = {
-		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,                    D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, sizeof(float) * 3,      D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+	  { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,                        D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+	  { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, sizeof(float) * 3,          D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+	  { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(float) * (3 + 2),      D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 	};
 
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
-	pso.pRootSignature = mCubeRootSig;
+	pso.pRootSignature = mCubeRootSig.Get();
 	pso.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
 	pso.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
-	pso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-	pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-	pso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE; // 와인딩 신경 안쓰게 안전하게
-	pso.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-	pso.SampleMask = UINT_MAX;
+	pso.InputLayout = { il, _countof(il) };
 	pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	pso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+	pso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	pso.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	pso.DepthStencilState.DepthEnable = TRUE;
+	pso.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
 	pso.NumRenderTargets = 1;
-	pso.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM; // 최종 백버퍼(blit 전용이면 상관없음)
+	pso.RTVFormats[0] = mSceneColor ? mSceneColor->GetDesc().Format : DXGI_FORMAT_R8G8B8A8_UNORM; // ★ 안전
 	pso.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 	pso.SampleDesc = { 1,0 };
-	pso.InputLayout = { il, _countof(il) };
+	pso.SampleMask = UINT_MAX;
 
-	return SUCCEEDED(DX_CONTEXT.GetDevice()->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&mCubePSO)));
+	hr = DX_CONTEXT.GetDevice()->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&mCubePSO));
+	return SUCCEEDED(hr);
 
 }
 
@@ -1048,92 +1245,221 @@ void DirectXManager::DestroyDepth()
 	if (mDepth) { mDepth.Release(); }
 }
 
-//bool DirectXManager::CreateDebugFillOnnxTexPSO()
-//{
-//	ID3D12Device* dev = DX_CONTEXT.GetDevice();
-//	if (!dev) return false;
-//
-//	if (!m_Onnx || !m_Onnx->PreRS) return false;
-//
-//	ComPointer<ID3DBlob> cs, err;
-//	HRESULT hr = D3DCompileFromFile(
-//		L"./Shaders/cs_debug_fill_onnxtex.hlsl",
-//		nullptr, nullptr, "main", "cs_5_0",
-//		0, 0, &cs, &err);
-//
-//	if (FAILED(hr) || !cs)
-//	{
-//		if (err) OutputDebugStringA((const char*)err->GetBufferPointer());
-//		return false;
-//	}
-//
-//	D3D12_COMPUTE_PIPELINE_STATE_DESC desc{};
-//	desc.pRootSignature = m_Onnx->PreRS.Get(); // UAV(u0) 있는 RS 재사용
-//	desc.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
-//
-//	hr = dev->CreateComputePipelineState(&desc, IID_PPV_ARGS(&m_DebugFillOnnxTexPSO));
-//	if (FAILED(hr)) return false;
-//
-//	return true;
-//}
+DirectX::XMFLOAT3 DirectXManager::GetLightDirWS() const
+{
+	return DirFromYawPitchLH(mLight.yaw, mLight.pitch);
+}
 
-//bool DirectXManager::CreateDebugViewPreCHWPSO()
-//{
-//	ID3D12Device* dev = DX_CONTEXT.GetDevice();
-//	if (!m_Onnx || !m_Onnx->PreRS) return false; // PreRS 재사용 (t-range, u-range, CBV)
-//
-//	ComPointer<ID3DBlob> cs, err;
-//	HRESULT hr = D3DCompileFromFile(
-//		L"./Shaders/cs_debug_view_pre_chw.hlsl",
-//		nullptr, nullptr, "main", "cs_5_0", 0, 0, &cs, &err);
-//	if (FAILED(hr) || !cs) {
-//		if (err) OutputDebugStringA((const char*)err->GetBufferPointer());
-//		return false;
-//	}
-//
-//	D3D12_COMPUTE_PIPELINE_STATE_DESC d{};
-//	d.pRootSignature = m_Onnx->PreRS.Get();
-//	d.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
-//
-//	return SUCCEEDED(dev->CreateComputePipelineState(&d, IID_PPV_ARGS(&m_DebugViewPreCHWPSO)));
-//}
+void DirectXManager::TransitionShadowToDSV(ID3D12GraphicsCommandList7* cmd)
+{
+	if (mShadowState != D3D12_RESOURCE_STATE_DEPTH_WRITE) {
+		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
+			mShadowMap.Get(), mShadowState, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+		cmd->ResourceBarrier(1, &b);
+		mShadowState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+	}
+}
 
-//void DirectXManager::RecreatePrevStylizedIfNeeded(UINT W, UINT H)
-//{
-//	ID3D12Device* dev = DX_CONTEXT.GetDevice();
-//
-//	bool need = true;
-//	if (mPrevStylized) {
-//		const auto d = mPrevStylized->GetDesc();
-//		// 크기나 포맷이 다르면 재생성
-//		need = (d.Width != W || d.Height != H || d.Format != DXGI_FORMAT_R16G16B16A16_FLOAT);
-//	}
-//	if (!need) return;
-//
-//	// 기존 리소스 정리
-//	mPrevStylized.Release();
-//	mPrevStylizedState = D3D12_RESOURCE_STATE_COMMON;
-//	//mHasPrevStylized = false;
-//
-//	// 새 리소스 생성 (전처리에서 SRV로 읽을 거라 NPSR로 시작)
-//	D3D12_RESOURCE_DESC td{};
-//	td.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-//	td.Width = W;
-//	td.Height = H;
-//	td.DepthOrArraySize = 1;
-//	td.MipLevels = 1;
-//	td.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-//	td.SampleDesc = { 1, 0 };
-//	td.Flags = D3D12_RESOURCE_FLAG_NONE; // SRV만 필요
-//
-//	CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
-//	dev->CreateCommittedResource(
-//		&hp, D3D12_HEAP_FLAG_NONE, &td,
-//		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, // 전처리에서 읽기
-//		nullptr, IID_PPV_ARGS(&mPrevStylized));
-//
-//	mPrevStylizedState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-//}
+DirectX::XMMATRIX DirectXManager::GetLightViewProj()
+{
+	DirectX::XMFLOAT3 focus{ 0,0,0 }; 
+	return MakeLightViewProj(mLight, focus);
+}
+
+bool DirectXManager::InitShadowMap(UINT size)
+{
+	auto dev = DX_CONTEXT.GetDevice();
+	mShadowSize = size;
+
+	if (!mShadowDsvHeap) {
+		D3D12_DESCRIPTOR_HEAP_DESC d{};
+		d.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+		d.NumDescriptors = 1;
+		dev->CreateDescriptorHeap(&d, IID_PPV_ARGS(&mShadowDsvHeap));
+		mShadowDSV = mShadowDsvHeap->GetCPUDescriptorHandleForHeapStart();
+	}
+
+	// R32_TYPELESS + DSV/clear
+	CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
+	auto tex = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R32_TYPELESS, mShadowSize, mShadowSize, 1, 1);
+	tex.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+	D3D12_CLEAR_VALUE clear{};
+	clear.Format = DXGI_FORMAT_D32_FLOAT;
+	clear.DepthStencil = { 1.0f, 0 };
+
+	dev->CreateCommittedResource(
+		&hp, D3D12_HEAP_FLAG_NONE, &tex,
+		D3D12_RESOURCE_STATE_DEPTH_WRITE, &clear,
+		IID_PPV_ARGS(&mShadowMap));
+
+	// DSV
+	D3D12_DEPTH_STENCIL_VIEW_DESC dsv{};
+	dsv.Format = DXGI_FORMAT_D32_FLOAT;
+	dsv.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+	dev->CreateDepthStencilView(mShadowMap.Get(), &dsv, mShadowDSV);
+
+	// ★ 오브젝트 전용 SRV 힙(2칸) 생성: t0=알베도, t1=섀도우
+	D3D12_DESCRIPTOR_HEAP_DESC h{};
+	h.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	h.NumDescriptors = 4;
+	h.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	dev->CreateDescriptorHeap(&h, IID_PPV_ARGS(&mObjSrvHeap2));
+	mObjSrvCPU = mObjSrvHeap2->GetCPUDescriptorHandleForHeapStart();
+	mObjSrvGPU = mObjSrvHeap2->GetGPUDescriptorHandleForHeapStart();
+
+	// t1 = Shadow SRV 만들기(일단 t1에 쓸 SRV만 만들어 둔다)
+	const UINT inc = dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	D3D12_CPU_DESCRIPTOR_HANDLE cpuShadow = mObjSrvCPU;
+	cpuShadow.ptr += inc * 1; // 슬롯 1 == t1
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
+	srv.Format = DXGI_FORMAT_R32_FLOAT;
+	srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srv.Texture2D.MipLevels = 1;
+	srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+	// [0,1] = Plane (t0=albedo_plane, t1=shadow)
+	{
+		// t0 <- plane albedo
+		auto dst0 = mObjSrvCPU;                         // slot 0
+		auto srcPlane = DX_IMAGE.GetCPUDescriptorHandle(m_PlaneObject->GetImage()->GetIndex());
+		dev->CopyDescriptorsSimple(1, dst0, srcPlane, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+		// t1 <- shadow
+		D3D12_CPU_DESCRIPTOR_HANDLE dst1 = mObjSrvCPU;  dst1.ptr += inc * 1;  // slot 1
+		dev->CreateShaderResourceView(mShadowMap.Get(), &srv, dst1);
+	}
+
+	// [2,3] = Cube (t0=albedo_cube, t1=shadow)
+	{
+		// t0 <- cube albedo
+		D3D12_CPU_DESCRIPTOR_HANDLE dst2 = mObjSrvCPU;  dst2.ptr += inc * 2;  // slot 2
+		auto srcCube = DX_IMAGE.GetCPUDescriptorHandle(m_CubeObject->GetImage()->GetIndex());
+		dev->CopyDescriptorsSimple(1, dst2, srcCube, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+		// t1 <- shadow (중복 생성해도 OK; 같은 리소스)
+		D3D12_CPU_DESCRIPTOR_HANDLE dst3 = mObjSrvCPU;  dst3.ptr += inc * 3;  // slot 3
+		dev->CreateShaderResourceView(mShadowMap.Get(), &srv, dst3);
+	}
+
+	dev->CreateShaderResourceView(mShadowMap.Get(), &srv, cpuShadow);
+
+	mShadowState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+	return true;
+}
+
+void DirectXManager::DestroyShadowMap()
+{
+	if (mShadowMap) mShadowMap.Release();
+	if (mShadowDsvHeap) mShadowDsvHeap.Release();
+	mShadowDSV = {};
+	mShadowSRV_CPU = {};
+	mShadowSRV_GPU = {};
+}
+
+bool DirectXManager::InitShadowPipeline()
+{
+	auto dev = DX_CONTEXT.GetDevice();
+
+	CD3DX12_ROOT_PARAMETER1 params[1];
+	params[0].InitAsConstants(16, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX); // b0: 16개
+
+	CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rsDesc;
+	rsDesc.Init_1_1(_countof(params), params, 0, nullptr,
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+	ComPointer<ID3DBlob> rsBlob, rsErr;
+	D3D12SerializeVersionedRootSignature(&rsDesc, &rsBlob, &rsErr);
+	dev->CreateRootSignature(0, rsBlob->GetBufferPointer(), rsBlob->GetBufferSize(), IID_PPV_ARGS(&mShadowRS));
+
+	const char* SHADOW_VS = R"(
+        cbuffer CB : register(b0) { float4x4 uLightMVP; }
+        struct VSIn  { float3 pos:POSITION; float2 uv:TEXCOORD; };
+        struct VSOut { float4 pos:SV_Position; };
+        VSOut main(VSIn i){ VSOut o; o.pos = mul(float4(i.pos,1), uLightMVP); return o; }
+    )";
+
+	ComPointer<ID3DBlob> vs, err;
+	D3DCompile(SHADOW_VS, strlen(SHADOW_VS), nullptr, nullptr, nullptr, "main", "vs_5_0", 0, 0, &vs, &err);
+
+	D3D12_INPUT_ELEMENT_DESC il[] = {
+		{ "POSITION",0,DXGI_FORMAT_R32G32B32_FLOAT,0,0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0 },
+		{ "TEXCOORD",0,DXGI_FORMAT_R32G32_FLOAT,   0,12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0 },
+	};
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
+	pso.pRootSignature = mShadowRS.Get();
+	pso.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
+	pso.PS = { nullptr, 0 };
+	pso.InputLayout = { il, _countof(il) };
+	pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	pso.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+	pso.RasterizerState.DepthBias = 100;
+	pso.RasterizerState.SlopeScaledDepthBias = 2.0f;
+	pso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	pso.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	pso.DepthStencilState.DepthEnable = TRUE;
+	pso.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	pso.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+	pso.NumRenderTargets = 0;                 // ★ RTV 없음
+	pso.SampleDesc = { 1,0 };
+	pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+	return SUCCEEDED(dev->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&mShadowPSO)));
+}
+
+void DirectXManager::RenderShadowPass(ID3D12GraphicsCommandList7* cmd)
+{
+	D3D12_VIEWPORT vp{ 0,0,(float)mShadowSize,(float)mShadowSize, 0,1 };
+	D3D12_RECT sc{ 0,0,(LONG)mShadowSize,(LONG)mShadowSize };
+	cmd->RSSetViewports(1, &vp);
+	cmd->RSSetScissorRects(1, &sc);
+
+	cmd->OMSetRenderTargets(0, nullptr, FALSE, &mShadowDSV);
+	cmd->ClearDepthStencilView(mShadowDSV, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+
+	cmd->SetPipelineState(mShadowPSO.Get());
+	cmd->SetGraphicsRootSignature(mShadowRS.Get());
+	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	using namespace DirectX;
+	const XMMATRIX LVP = GetLightViewProj();
+
+	// Plane: W = I
+	{
+		XMFLOAT4X4 WLP_T;
+		XMStoreFloat4x4(&WLP_T, XMMatrixTranspose(XMMatrixIdentity() * LVP));
+		cmd->SetGraphicsRoot32BitConstants(0, 16, &WLP_T, 0);
+		m_PlaneObject->RenderingDepthOnly(cmd);
+	}
+
+	// Cube: W = 회전 (mAngle 사용)
+	{
+		XMMATRIX W = XMMatrixRotationY(mAngle) * XMMatrixRotationX(0); // 필요시 이동 더하기
+		XMFLOAT4X4 WLP_T;
+		XMStoreFloat4x4(&WLP_T, XMMatrixTranspose(W * LVP));
+		cmd->SetGraphicsRoot32BitConstants(0, 16, &WLP_T, 0);
+		m_CubeObject->RenderingDepthOnly(cmd);
+	}
+}
+
+void DirectXManager::TransitionShadowToSRV(ID3D12GraphicsCommandList7* cmd)
+{
+	if (mShadowState != D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE) {
+		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
+			mShadowMap.Get(),
+			mShadowState,
+			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		cmd->ResourceBarrier(1, &b);
+		mShadowState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+	}
+}
+
+void DirectXManager::BuildMVPs(const DirectX::XMMATRIX& M, const Camera& cam, float aspect, const DirectX::XMMATRIX& lightVP, DirectX::XMFLOAT4X4& outMVP_T, DirectX::XMFLOAT4X4& outLightVP_T)
+{
+	BuildMVPs_(M, cam, aspect, lightVP, outMVP_T, outLightVP_T);
+}
 
 void DirectXManager::ResizeOnnxResources(UINT W, UINT H)
 {
@@ -1160,8 +1486,6 @@ void DirectXManager::ResizeOnnxResources(UINT W, UINT H)
 	UINT styleH = sDesc.Height;
 
 }
-
-
 
 bool DirectXManager::CreateOnnxComputePipeline()
 {
@@ -1240,16 +1564,19 @@ void DirectXManager::Resize()
 
 void DirectXManager::RenderOffscreen(ID3D12GraphicsCommandList7* cmd)
 {
-	// SceneColor: ? -> RTV
-	if (mSceneColorState != D3D12_RESOURCE_STATE_RENDER_TARGET) 
-	{
-		CD3DX12_RESOURCE_BARRIER b = CD3DX12_RESOURCE_BARRIER::Transition(
-			mSceneColor.Get(), mSceneColorState, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	 // 섀도우맵을 픽셀셰이더 SRV 상태로
+	TransitionShadowToDSV(cmd);
+	RenderShadowPass(cmd);
+	TransitionShadowToSRV(cmd);
+
+	// SceneColor → RTV
+	if (mSceneColorState != D3D12_RESOURCE_STATE_RENDER_TARGET) {
+		auto b = CD3DX12_RESOURCE_BARRIER::Transition(mSceneColor.Get(), mSceneColorState, D3D12_RESOURCE_STATE_RENDER_TARGET);
 		cmd->ResourceBarrier(1, &b);
 		mSceneColorState = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	}
 
-	const FLOAT clear[4] = { 0,0,0,1 };
+	const FLOAT clear[4] = { 0.6f ,0.65f, 0.9f, 1 };
 	cmd->OMSetRenderTargets(1, &mRtvScene, FALSE, nullptr);
 	cmd->ClearRenderTargetView(mRtvScene, clear, 0, nullptr);
 
@@ -1260,17 +1587,37 @@ void DirectXManager::RenderOffscreen(ID3D12GraphicsCommandList7* cmd)
 	cmd->ClearDepthStencilView(mDSV, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
 	UploadGPUResource(cmd);
-
 	RenderImage(cmd);
 
-	m_PlaneObject->Rendering(cmd, mCam, mAspect, mRtvScene, mDSV, 0, 0.f);
-	m_CubeObject->Rendering(cmd, mCam, mAspect, mRtvScene, mDSV, 0, mAngle);
+	auto dev = DX_CONTEXT.GetDevice();
+	const UINT inc = dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
+	// ★ 이 힙을 바인딩해야 PS에서 t0/t1을 읽는다
+	//ID3D12DescriptorHeap* heaps[] = { mSponza->GetHeap() };
+	//cmd->SetDescriptorHeaps(1, heaps);   // ★ 추가
+
+	if (mSponza) {
+		mSponza->Render(cmd, mCam, mAspect, mRtvScene, mDSV);
+	}
+
+	// Plane: base = slot 0 (t0=plane, t1=shadow)
+	{
+		DX_MANAGER.mObjSrvGPU = mObjSrvHeap2->GetGPUDescriptorHandleForHeapStart();
+		m_PlaneObject->Rendering(cmd, mCam, mAspect, mRtvScene, mDSV, 0.f);
+	}
+
+	// Cube: base = slot 2 (t0=cube, t1=shadow)
+	{
+		D3D12_GPU_DESCRIPTOR_HANDLE base = mObjSrvHeap2->GetGPUDescriptorHandleForHeapStart();
+		base.ptr += inc * 2;
+		DX_MANAGER.mObjSrvGPU = base;
+		m_CubeObject->Rendering(cmd, mCam, mAspect, mRtvScene, mDSV, mAngle);
+	}
+
+	// SceneColor → NPSR
 	{
 		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
-			mSceneColor.Get(),
-			mSceneColorState,
-			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+			mSceneColor.Get(), mSceneColorState, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 		cmd->ResourceBarrier(1, &b);
 		mSceneColorState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 	}
@@ -1402,57 +1749,43 @@ void DirectXManager::InitUploadRenderingObject()
 void DirectXManager::InitGeometry()
 {
 	{
-		// 바닥 평면: XZ에 -50..+50, Y=0 (100m x 100m)
 		const float H = 50.0f;
-		// 타일링: 10m 당 1타일 -> 전체 10x10 타일
 		const float tile = 10.0f;
 
 		Vtx v[4] = {
-			{{-H, 0.0f, -H}, {0.0f,         0.0f        }},
-			{{-H, 0.0f,  H}, {0.0f,         100.0f / tile }},
-			{{ H, 0.0f,  H}, {100.0f / tile,  100.0f / tile }},
-			{{ H, 0.0f, -H}, {100.0f / tile,  0.0f        }},
+			{{-H, 0.0f, -H}, {0.0f,           0.0f          }, {0,1,0}},
+			{{-H, 0.0f,  H}, {0.0f,           100.0f / tile   }, {0,1,0}},
+			{{ H, 0.0f,  H}, {100.0f / tile,    100.0f / tile   }, {0,1,0}},
+			{{ H, 0.0f, -H}, {100.0f / tile,    0.0f          }, {0,1,0}},
 		};
 		uint16_t i[6] = { 0,1,2, 0,2,3 };
-		UINT index = 6;
-
-		const UINT vbSize = sizeof(v);
-		const UINT ibSize = sizeof(i);
-
-		m_PlaneObject->InitGeometry(v, vbSize, i, ibSize, index);
+		// vbSize/ibSize/index 동일
+		m_PlaneObject->InitGeometry(v, sizeof(v), i, sizeof(i), 6);
 	}
 
+	// Cube (면 고정 노멀)
 	{
 		const float c = 0.5f;
-
-		// 각 면별 4버텍스
 		Vtx v[] = {
-			// +Z (front)
-			{{-c,-c, c},{0,1}}, {{-c, c, c},{0,0}}, {{ c, c, c},{1,0}}, {{ c,-c, c},{1,1}},
-			// -Z (back)
-			{{ c,-c,-c},{0,1}}, {{ c, c,-c},{0,0}}, {{-c, c,-c},{1,0}}, {{-c,-c,-c},{1,1}},
-			// +X (right)
-			{{ c,-c, c},{0,1}}, {{ c, c, c},{0,0}}, {{ c, c,-c},{1,0}}, {{ c,-c,-c},{1,1}},
-			// -X (left)
-			{{-c,-c,-c},{0,1}}, {{-c, c,-c},{0,0}}, {{-c, c, c},{1,0}}, {{-c,-c, c},{1,1}},
-			// +Y (top)
-			{{-c, c, c},{0,1}}, {{-c, c,-c},{0,0}}, {{ c, c,-c},{1,0}}, {{ c, c, c},{1,1}},
-			// -Y (bottom)
-			{{-c,-c,-c},{0,1}}, {{-c,-c, c},{0,0}}, {{ c,-c, c},{1,0}}, {{ c,-c,-c},{1,1}},
+			// +Z
+			{{-c,-c, c},{0,1},{0,0,1}}, {{-c, c, c},{0,0},{0,0,1}}, {{ c, c, c},{1,0},{0,0,1}}, {{ c,-c, c},{1,1},{0,0,1}},
+			// -Z
+			{{ c,-c,-c},{0,1},{0,0,-1}}, {{ c, c,-c},{0,0},{0,0,-1}}, {{-c, c,-c},{1,0},{0,0,-1}}, {{-c,-c,-c},{1,1},{0,0,-1}},
+			// +X
+			{{ c,-c, c},{0,1},{1,0,0}}, {{ c, c, c},{0,0},{1,0,0}}, {{ c, c,-c},{1,0},{1,0,0}}, {{ c,-c,-c},{1,1},{1,0,0}},
+			// -X
+			{{-c,-c,-c},{0,1},{-1,0,0}}, {{-c, c,-c},{0,0},{-1,0,0}}, {{-c, c, c},{1,0},{-1,0,0}}, {{-c,-c, c},{1,1},{-1,0,0}},
+			// +Y
+			{{-c, c, c},{0,1},{0,1,0}}, {{-c, c,-c},{0,0},{0,1,0}}, {{ c, c,-c},{1,0},{0,1,0}}, {{ c, c, c},{1,1},{0,1,0}},
+			// -Y
+			{{-c,-c,-c},{0,1},{0,-1,0}}, {{-c,-c, c},{0,0},{0,-1,0}}, {{ c,-c, c},{1,0},{0,-1,0}}, {{ c,-c,-c},{1,1},{0,-1,0}},
 		};
 		uint16_t idx[] = {
-			0,1,2, 0,2,3,
-			4,5,6, 4,6,7,
-			8,9,10, 8,10,11,
-			12,13,14, 12,14,15,
-			16,17,18, 16,18,19,
-			20,21,22, 20,22,23,
+			0,1,2, 0,2,3,     4,5,6, 4,6,7,
+			8,9,10, 8,10,11,  12,13,14, 12,14,15,
+			16,17,18, 16,18,19, 20,21,22, 20,22,23,
 		};
-
-		const UINT vbSize = sizeof(v);
-		const UINT ibSize = sizeof(idx);
-
-		m_CubeObject->InitGeometry(v, vbSize, idx, ibSize, (UINT)_countof(idx));
+		m_CubeObject->InitGeometry(v, sizeof(v), idx, sizeof(idx), (UINT)_countof(idx));
 	}
 }
 

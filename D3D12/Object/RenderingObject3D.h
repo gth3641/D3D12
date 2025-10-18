@@ -20,12 +20,14 @@ public: // Static & Override
 public: // Functions
 	void Rendering(
 		ID3D12GraphicsCommandList7* cmd,
-		Camera& cam,
-		float mAspect,
-		D3D12_CPU_DESCRIPTOR_HANDLE& mRtvScene,
-		D3D12_CPU_DESCRIPTOR_HANDLE& mDSV,
-		UINT indexCount,
+		const Camera& cam, 
+		float aspect,
+		D3D12_CPU_DESCRIPTOR_HANDLE& rtv, 
+		D3D12_CPU_DESCRIPTOR_HANDLE& dsv,
 		float angle
+	);
+	void RenderingDepthOnly(
+		ID3D12GraphicsCommandList7* cmd
 	);
 
 	bool InitGeometry(
@@ -35,6 +37,10 @@ public: // Functions
 		UINT ibSize,
 		UINT index
 	);
+
+	bool InitGeometry(Vtx* vertices, UINT vbSize,
+		const void* indices, UINT ibSize,
+		UINT indexCount, DXGI_FORMAT idxFmt);
 
 protected:
 	ComPointer<ID3D12Resource2>  m_IndexBuffer;

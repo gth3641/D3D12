@@ -123,6 +123,12 @@
     <ClCompile Include="OnnxRunner\OnnxRunner_Sanet.cpp">
       <Filter>소스 파일\Onnx\Runner</Filter>
     </ClCompile>
+    <ClCompile Include="Support\SponzaLoader.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="Support\SponzaModel.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="D3D\DXContext.h">
@@ -221,6 +227,15 @@
     <ClInclude Include="OnnxRunner\OnnxRunner_Sanet.h">
       <Filter>헤더 파일\Onnx\Runner</Filter>
     </ClInclude>
+    <ClInclude Include="Support\SponzaLoader.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Support\SponzaModel.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Support\tiny_obj_loader.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Shaders\RootSignature.hlsl">
@@ -271,6 +286,8 @@
       <Filter>소스 파일\Shader</Filter>
     </None>
     <None Include="packages.config" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime_providers_shared.dll" />
     <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />
     <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime_providers_shared.dll" />
     <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />

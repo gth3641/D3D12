@@ -120,13 +120,14 @@ bool DXWindow::Init()
 		return false;
 	}
 
-	DX_INPUT.AddDelegate(VK_F1, this, &DXWindow::OnChangedAdaINModel);
-	DX_INPUT.AddDelegate(VK_F2, this, &DXWindow::OnChangedFastStyleTransferModel);
-	DX_INPUT.AddDelegate(VK_F3, this, &DXWindow::OnChangedSANetModel);
-	DX_INPUT.AddDelegate(VK_F4, this, &DXWindow::OnChangedReCoNetModel);
+	DX_INPUT.AddDelegate(49, this, &DXWindow::OnChangedNormal);
+	DX_INPUT.AddDelegate(50, this, &DXWindow::OnChangedAdaINModel);
+	DX_INPUT.AddDelegate(51, this, &DXWindow::OnChangedFastStyleTransferModel);
+	DX_INPUT.AddDelegate(52, this, &DXWindow::OnChangedSANetModel);
+	DX_INPUT.AddDelegate(53, this, &DXWindow::OnChangedReCoNetModel);
 	SetMouseLock();
 
-
+	DX_INPUT.AddDelegate(VK_LCONTROL, this, &DXWindow::SetMouseLock);
 
 	return true;
 }
@@ -179,6 +180,17 @@ void DXWindow::UpdateChangeOnnx()
 
 		m_shouldChangeOnnx = false;
 	}
+}
+
+void DXWindow::OnChangedNormal()
+{
+	if (DX_ONNX.GetOnnxType() == OnnxType::WCT2)
+	{
+		return;
+	}
+
+	DX_ONNX.SetChangeOnnxType(OnnxType::WCT2);
+	m_shouldChangeOnnx = true;
 }
 
 void DXWindow::OnChangedAdaINModel()

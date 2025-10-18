@@ -167,6 +167,8 @@
     <ClCompile Include="Support\Onnx\OnnxService_Sanet.cpp" />
     <ClCompile Include="Support\Onnx\OnnxService_Udnie.cpp" />
     <ClCompile Include="Support\Shader.cpp" />
+    <ClCompile Include="Support\SponzaLoader.cpp" />
+    <ClCompile Include="Support\SponzaModel.cpp" />
     <ClCompile Include="Support\Window.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -197,6 +199,9 @@
     <ClInclude Include="Support\Onnx\OnnxService_Sanet.h" />
     <ClInclude Include="Support\Onnx\OnnxService_Udnie.h" />
     <ClInclude Include="Support\Shader.h" />
+    <ClInclude Include="Support\SponzaLoader.h" />
+    <ClInclude Include="Support\SponzaModel.h" />
+    <ClInclude Include="Support\tiny_obj_loader.h" />
     <ClInclude Include="Support\Window.h" />
     <ClInclude Include="Support\WinInclude.h" />
     <ClInclude Include="Util\LoggingProvider.h" />
