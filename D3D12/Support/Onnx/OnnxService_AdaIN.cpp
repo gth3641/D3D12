@@ -16,7 +16,7 @@ static void WriteSceneSRVToSlot0(ID3D12Resource2* sceneColor, OnnxGPUResources* 
 	s.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	s.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	s.Texture2D.MipLevels = 1;
-	dev->CreateShaderResourceView(sceneColor, &s, onnxGPUResource->SceneSRV_CPU);
+	dev->CreateShaderResourceView(sceneColor, &s, onnxGPUResource->m_SceneSRV_CPU);
 }
 
 static void WriteStyleSRVToSlot6(ID3D12Resource* styleTex, DXGI_FORMAT fmt, OnnxGPUResources* onnxGPUResource)
@@ -27,7 +27,7 @@ static void WriteStyleSRVToSlot6(ID3D12Resource* styleTex, DXGI_FORMAT fmt, Onnx
 	s.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	s.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	s.Texture2D.MipLevels = 1;
-	DX_CONTEXT.GetDevice()->CreateShaderResourceView(styleTex, &s, onnxGPUResource->StyleSRV_CPU);
+	DX_CONTEXT.GetDevice()->CreateShaderResourceView(styleTex, &s, onnxGPUResource->m_StyleSRV_CPU);
 }
 
 
@@ -48,8 +48,8 @@ void OnnxService_AdaIN::RecordPreprocess_AdaIN(
 
 	ID3D12DescriptorHeap* heaps[] = { heap };
 	cmd->SetDescriptorHeaps(1, heaps);
-	cmd->SetComputeRootSignature(onnxResource->PreRS.Get());
-	cmd->SetPipelineState(onnxResource->PrePSO.Get());
+	cmd->SetComputeRootSignature(onnxResource->m_PreRS.Get());
+	cmd->SetPipelineState(onnxResource->m_PrePSO.Get());
 
 	const UINT Slice = (UINT)((sizeof(UINT) * 8 + 255) & ~255);
 
@@ -71,15 +71,15 @@ void OnnxService_AdaIN::RecordPreprocess_AdaIN(
 		};
 
 		uint8_t* base = nullptr;
-		onnxGPUResource->CB->Map(0, nullptr, (void**)&base);
+		onnxGPUResource->m_CB->Map(0, nullptr, (void**)&base);
 		memcpy(base + 0, &cb, sizeof(cb));
-		onnxGPUResource->CB->Unmap(0, nullptr);
-		cmd->SetComputeRootConstantBufferView(2, onnxGPUResource->CB->GetGPUVirtualAddress() + 0);
+		onnxGPUResource->m_CB->Unmap(0, nullptr);
+		cmd->SetComputeRootConstantBufferView(2, onnxGPUResource->m_CB->GetGPUVirtualAddress() + 0);
 
 		// t0/u0
 		WriteSceneSRVToSlot0(sceneColor, onnxGPUResource);
-		cmd->SetComputeRootDescriptorTable(0, onnxGPUResource->SceneSRV_GPU);
-		cmd->SetComputeRootDescriptorTable(1, onnxGPUResource->InputContentUAV_GPU);
+		cmd->SetComputeRootDescriptorTable(0, onnxGPUResource->m_SceneSRV_GPU);
+		cmd->SetComputeRootDescriptorTable(1, onnxGPUResource->m_InputContentUAV_GPU);
 
 		static D3D12_RESOURCE_STATES sInContentState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 		if (sInContentState != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
@@ -125,10 +125,10 @@ void OnnxService_AdaIN::RecordPreprocess_AdaIN(
 			0, 0, 0, 0
 		};
 		uint8_t* base = nullptr;
-		onnxGPUResource->CB->Map(0, nullptr, (void**)&base);
+		onnxGPUResource->m_CB->Map(0, nullptr, (void**)&base);
 		memcpy(base + Slice, &cb, sizeof(cb));
-		onnxGPUResource->CB->Unmap(0, nullptr);
-		cmd->SetComputeRootConstantBufferView(2, onnxGPUResource->CB->GetGPUVirtualAddress() + Slice);
+		onnxGPUResource->m_CB->Unmap(0, nullptr);
+		cmd->SetComputeRootConstantBufferView(2, onnxGPUResource->m_CB->GetGPUVirtualAddress() + Slice);
 
 		// StyleTex: PSR -> NPSR
 		static D3D12_RESOURCE_STATES sStyleTexState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
@@ -141,8 +141,8 @@ void OnnxService_AdaIN::RecordPreprocess_AdaIN(
 
 		// In RecordPreprocess (STYLE section)
 		WriteStyleSRVToSlot6(styleTex, styleImage.GetTextureData().giPixelFormat, onnxGPUResource);
-		cmd->SetComputeRootDescriptorTable(0, onnxGPUResource->StyleSRV_GPU);   // t0
-		cmd->SetComputeRootDescriptorTable(1, onnxGPUResource->InputStyleUAV_GPU); // u0
+		cmd->SetComputeRootDescriptorTable(0, onnxGPUResource->m_StyleSRV_GPU);   // t0
+		cmd->SetComputeRootDescriptorTable(1, onnxGPUResource->m_InputStyleUAV_GPU); // u0
 
 		// Ensure UAV state
 		static D3D12_RESOURCE_STATES sInStyleState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
@@ -172,8 +172,8 @@ void OnnxService_AdaIN::RecordPostprocess_AdaIN(
 {
 	ID3D12DescriptorHeap* heaps[] = { heap };
 	cmd->SetDescriptorHeaps(1, heaps);
-	cmd->SetComputeRootSignature(onnxResource->PreRS.Get());
-	cmd->SetPipelineState(onnxResource->PostPSO.Get());
+	cmd->SetComputeRootSignature(onnxResource->m_PreRS.Get());
+	cmd->SetPipelineState(onnxResource->m_PostPSO.Get());
 
 	// 1) 실제 출력 shape (NCHW)
 	const auto& osh = DX_ONNX.GetOutputShape();
@@ -193,7 +193,7 @@ void OnnxService_AdaIN::RecordPostprocess_AdaIN(
 	}
 	if (mOnnxTexState != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
 		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
-			onnxGPUResource->OnnxTex.Get(),
+			onnxGPUResource->m_OnnxTex.Get(),
 			mOnnxTexState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 		cmd->ResourceBarrier(1, &b);
 		mOnnxTexState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
@@ -211,12 +211,12 @@ void OnnxService_AdaIN::RecordPostprocess_AdaIN(
 		s.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
 		DX_CONTEXT.GetDevice()->CreateShaderResourceView(
-			DX_ONNX.GetOutputBuffer().Get(), &s, onnxGPUResource->ModelOutSRV_CPU);
+			DX_ONNX.GetOutputBuffer().Get(), &s, onnxGPUResource->m_ModelOutSRV_CPU);
 	}
 
 	// 4) CB 업데이트 (SrcW/H/C, DstW/H)
-	const UINT dstW = onnxResource->Width;
-	const UINT dstH = onnxResource->Height;
+	const UINT dstW = onnxResource->m_Width;
+	const UINT dstH = onnxResource->m_Height;
 
 	UINT Flags = 0;
 	if (DX_ONNX.GetOnnxType() == OnnxType::Sanet)
@@ -232,10 +232,12 @@ void OnnxService_AdaIN::RecordPostprocess_AdaIN(
 	}; 
 
 	void* p = nullptr;
-	onnxGPUResource->CB->Map(0, nullptr, &p); std::memcpy(p, &cb, sizeof(cb)); onnxGPUResource->CB->Unmap(0, nullptr);
-	cmd->SetComputeRootConstantBufferView(2, onnxGPUResource->CB->GetGPUVirtualAddress());
-	cmd->SetComputeRootDescriptorTable(0, onnxGPUResource->ModelOutSRV_GPU);
-	cmd->SetComputeRootDescriptorTable(1, onnxGPUResource->OnnxTexUAV_GPU);
+	onnxGPUResource->m_CB->Map(0, nullptr, &p); 
+	std::memcpy(p, &cb, sizeof(cb)); 
+	onnxGPUResource->m_CB->Unmap(0, nullptr);
+	cmd->SetComputeRootConstantBufferView(2, onnxGPUResource->m_CB->GetGPUVirtualAddress());
+	cmd->SetComputeRootDescriptorTable(0, onnxGPUResource->m_ModelOutSRV_GPU);
+	cmd->SetComputeRootDescriptorTable(1, onnxGPUResource->m_OnnxTexUAV_GPU);
 
 	const UINT TGX = 8, TGY = 8;
 	cmd->Dispatch((dstW + TGX - 1) / TGX, (dstH + TGY - 1) / TGY, 1);
@@ -250,7 +252,7 @@ void OnnxService_AdaIN::RecordPostprocess_AdaIN(
 	}
 	{
 		auto b = CD3DX12_RESOURCE_BARRIER::Transition(
-			onnxGPUResource->OnnxTex.Get(),
+			onnxGPUResource->m_OnnxTex.Get(),
 			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
 			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 		cmd->ResourceBarrier(1, &b);
@@ -291,7 +293,7 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 
 		CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
 		dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &td,
-			D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&onnxGPUResource->OnnxTex));
+			D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&onnxGPUResource->m_OnnxTex));
 
 		mOnnxTexState = D3D12_RESOURCE_STATE_COMMON;
 	}
@@ -302,14 +304,14 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 		d.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		d.NumDescriptors = 12; 
 		d.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		dev->CreateDescriptorHeap(&d, IID_PPV_ARGS(&onnxGPUResource->Heap));
+		dev->CreateDescriptorHeap(&d, IID_PPV_ARGS(&onnxGPUResource->m_Heap));
 
 		D3D12_DESCRIPTOR_HEAP_DESC dCPU = d;
 		dCPU.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 		dev->CreateDescriptorHeap(&dCPU, IID_PPV_ARGS(&heapCPU));
 	}
-	auto gpuStart = onnxGPUResource->Heap->GetGPUDescriptorHandleForHeapStart();
-	auto cpuGPU = onnxGPUResource->Heap->GetCPUDescriptorHandleForHeapStart();
+	auto gpuStart = onnxGPUResource->m_Heap->GetGPUDescriptorHandleForHeapStart();
+	auto cpuGPU = onnxGPUResource->m_Heap->GetCPUDescriptorHandleForHeapStart();
 	auto cpuOnly = heapCPU->GetCPUDescriptorHandleForHeapStart();
 	const UINT inc = dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	auto nthGPU = [&](UINT i) { auto h = gpuStart; h.ptr += i * inc; return h; };
@@ -323,9 +325,9 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 		s.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 		s.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 		s.Texture2D.MipLevels = 1;
-		onnxGPUResource->SceneSRV_CPU = nthCPU_GPU(0);
-		onnxGPUResource->SceneSRV_GPU = nthGPU(0);
-		dev->CreateShaderResourceView(sceneColor, &s, onnxGPUResource->SceneSRV_CPU);
+		onnxGPUResource->m_SceneSRV_CPU = nthCPU_GPU(0);
+		onnxGPUResource->m_SceneSRV_GPU = nthGPU(0);
+		dev->CreateShaderResourceView(sceneColor, &s, onnxGPUResource->m_SceneSRV_CPU);
 	}
 	// (1) InputContent UAV (structured float)
 	{
@@ -338,9 +340,9 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 		u.Buffer.StructureByteStride = sizeof(float);
 		u.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
 
-		onnxGPUResource->InputContentUAV_CPU = nthCPU_GPU(1);
-		onnxGPUResource->InputContentUAV_GPU = nthGPU(1);
-		dev->CreateUnorderedAccessView(DX_ONNX.GetInputBufferContent().Get(), nullptr, &u, onnxGPUResource->InputContentUAV_CPU);
+		onnxGPUResource->m_InputContentUAV_CPU = nthCPU_GPU(1);
+		onnxGPUResource->m_InputContentUAV_GPU = nthGPU(1);
+		dev->CreateUnorderedAccessView(DX_ONNX.GetInputBufferContent().Get(), nullptr, &u, onnxGPUResource->m_InputContentUAV_CPU);
 	}
 	// (2) InputStyle UAV (structured float)
 	{
@@ -353,18 +355,18 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 		u.Buffer.StructureByteStride = sizeof(float);
 		u.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
 
-		onnxGPUResource->InputStyleUAV_CPU = nthCPU_GPU(2);
-		onnxGPUResource->InputStyleUAV_GPU = nthGPU(2);
-		dev->CreateUnorderedAccessView(DX_ONNX.GetInputBufferStyle().Get(), nullptr, &u, onnxGPUResource->InputStyleUAV_CPU);
+		onnxGPUResource->m_InputStyleUAV_CPU = nthCPU_GPU(2);
+		onnxGPUResource->m_InputStyleUAV_GPU = nthGPU(2);
+		dev->CreateUnorderedAccessView(DX_ONNX.GetInputBufferStyle().Get(), nullptr, &u, onnxGPUResource->m_InputStyleUAV_CPU);
 	}
 	// (3) OnnxTex UAV
 	{
 		D3D12_UNORDERED_ACCESS_VIEW_DESC u{};
 		u.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 		u.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		onnxGPUResource->OnnxTexUAV_CPU = nthCPU_GPU(3);
-		onnxGPUResource->OnnxTexUAV_GPU = nthGPU(3);
-		dev->CreateUnorderedAccessView(onnxGPUResource->OnnxTex.Get(), nullptr, &u, onnxGPUResource->OnnxTexUAV_CPU);
+		onnxGPUResource->m_OnnxTexUAV_CPU = nthCPU_GPU(3);
+		onnxGPUResource->m_OnnxTexUAV_GPU = nthGPU(3);
+		dev->CreateUnorderedAccessView(onnxGPUResource->m_OnnxTex.Get(), nullptr, &u, onnxGPUResource->m_OnnxTexUAV_CPU);
 	}
 	// (4) OnnxTex SRV
 	{
@@ -373,9 +375,9 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 		s.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 		s.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 		s.Texture2D.MipLevels = 1;
-		onnxGPUResource->OnnxTexSRV_CPU = nthCPU_GPU(4);
-		onnxGPUResource->OnnxTexSRV_GPU = nthGPU(4);
-		dev->CreateShaderResourceView(onnxGPUResource->OnnxTex.Get(), &s, onnxGPUResource->OnnxTexSRV_CPU);
+		onnxGPUResource->m_OnnxTexSRV_CPU = nthCPU_GPU(4);
+		onnxGPUResource->m_OnnxTexSRV_GPU = nthGPU(4);
+		dev->CreateShaderResourceView(onnxGPUResource->m_OnnxTex.Get(), &s, onnxGPUResource->m_OnnxTexSRV_CPU);
 	}
 	// (5) ModelOut SRV
 	{
@@ -388,14 +390,14 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 		s.Buffer.StructureByteStride = sizeof(float);
 		s.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
-		onnxGPUResource->ModelOutSRV_CPU = nthCPU_GPU(5);
-		onnxGPUResource->ModelOutSRV_GPU = nthGPU(5);
-		dev->CreateShaderResourceView(DX_ONNX.GetOutputBuffer().Get(), &s, onnxGPUResource->ModelOutSRV_CPU);
+		onnxGPUResource->m_ModelOutSRV_CPU = nthCPU_GPU(5);
+		onnxGPUResource->m_ModelOutSRV_GPU = nthGPU(5);
+		dev->CreateShaderResourceView(DX_ONNX.GetOutputBuffer().Get(), &s, onnxGPUResource->m_ModelOutSRV_CPU);
 	}
 	// (6) StyleTex SRV
 	{
-		onnxGPUResource->StyleSRV_CPU = nthCPU_GPU(6);
-		onnxGPUResource->StyleSRV_GPU = nthGPU(6);
+		onnxGPUResource->m_StyleSRV_CPU = nthCPU_GPU(6);
+		onnxGPUResource->m_StyleSRV_GPU = nthGPU(6);
 	}
 	// (7) InputContent SRV
 	{
@@ -409,9 +411,9 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 		s.Buffer.StructureByteStride = sizeof(float);
 		s.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
-		onnxGPUResource->InputContentSRV_CPU = nthCPU_GPU(7);
-		onnxGPUResource->InputContentSRV_GPU = nthGPU(7);
-		dev->CreateShaderResourceView(DX_ONNX.GetInputBufferContent().Get(), &s, onnxGPUResource->InputContentSRV_CPU);
+		onnxGPUResource->m_InputContentSRV_CPU = nthCPU_GPU(7);
+		onnxGPUResource->m_InputContentSRV_GPU = nthGPU(7);
+		dev->CreateShaderResourceView(DX_ONNX.GetInputBufferContent().Get(), &s, onnxGPUResource->m_InputContentSRV_CPU);
 	}
 	// (8) InputStyle SRV
 	{
@@ -425,9 +427,9 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 		s.Buffer.StructureByteStride = sizeof(float);
 		s.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
-		onnxGPUResource->InputStyleSRV_CPU = nthCPU_GPU(8);
-		onnxGPUResource->InputStyleSRV_GPU = nthGPU(8);
-		dev->CreateShaderResourceView(DX_ONNX.GetInputBufferStyle().Get(), &s, onnxGPUResource->InputStyleSRV_CPU);
+		onnxGPUResource->m_InputStyleSRV_CPU = nthCPU_GPU(8);
+		onnxGPUResource->m_InputStyleSRV_GPU = nthGPU(8);
+		dev->CreateShaderResourceView(DX_ONNX.GetInputBufferStyle().Get(), &s, onnxGPUResource->m_InputStyleSRV_CPU);
 	}
 	// (9) RAW UAV
 	{
@@ -441,15 +443,13 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 		uRaw.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
 
 		const UINT slot = 9;
-		onnxGPUResource->InputStyleUAV_GPU_ForClear = nthGPU(slot);
-		onnxGPUResource->InputStyleUAV_CPU_ForClear = nthCPUONLY(slot);
+		onnxGPUResource->m_InputStyleUAV_GPU_ForClear = nthGPU(slot);
+		onnxGPUResource->m_InputStyleUAV_CPU_ForClear = nthCPUONLY(slot);
 
-		// GPU-visible heap
 		dev->CreateUnorderedAccessView(
 			DX_ONNX.GetInputBufferStyle().Get(), nullptr, &uRaw, nthCPU_GPU(slot));
-		// CPU-only heap
 		dev->CreateUnorderedAccessView(
-			DX_ONNX.GetInputBufferStyle().Get(), nullptr, &uRaw, onnxGPUResource->InputStyleUAV_CPU_ForClear);
+			DX_ONNX.GetInputBufferStyle().Get(), nullptr, &uRaw, onnxGPUResource->m_InputStyleUAV_CPU_ForClear);
 	}
 
 	// 10) CB
@@ -458,9 +458,9 @@ void OnnxService_AdaIN::CreateOnnxResources_AdaIN(UINT W, UINT H,
 		CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_UPLOAD);
 		auto desc = CD3DX12_RESOURCE_DESC::Buffer(Slice * 2);
 		dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &desc,
-			D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&onnxGPUResource->CB));
+			D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&onnxGPUResource->m_CB));
 		mOnnxInputState = D3D12_RESOURCE_STATE_GENERIC_READ;
 	}
 
-	onnxResource->Width = W; onnxResource->Height = H;
+	onnxResource->m_Width = W; onnxResource->m_Height = H;
 }

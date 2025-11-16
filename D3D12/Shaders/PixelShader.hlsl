@@ -6,10 +6,7 @@ sampler textureSampler : register(s0);
 
 [RootSignature(ROOTSIG)]
 void main(
-    // === IN ===
     in float2 uv : Texcoord,
-
-    // === OUT ===
     out float4 pixel : SV_Target
 )
 {

@@ -1,11 +1,11 @@
 #include "OnnxManager.h"
 
 #include "OnnxRunner/OnnxRunner_AdaIN.h"
-#include "OnnxRunner/OnnxRunner_Udnie.h"
+//#include "OnnxRunner/OnnxRunner_Udnie.h"
 #include "OnnxRunner/OnnxRunner_FastNeuralStyle.h"
-#include "OnnxRunner/OnnxRunner_ReCoNet.h"
-#include "OnnxRunner/OnnxRunner_BlindVideo.h"
-#include "OnnxRunner/OnnxRunner_Sanet.h"
+//#include "OnnxRunner/OnnxRunner_ReCoNet.h"
+//#include "OnnxRunner/OnnxRunner_BlindVideo.h"
+//#include "OnnxRunner/OnnxRunner_Sanet.h"
 
 bool OnnxManager::Init(const std::wstring& modelPath, ID3D12Device* dev, ID3D12CommandQueue* queue)
 {
@@ -22,45 +22,25 @@ bool OnnxManager::Init(OnnxType type, ID3D12Device* dev, ID3D12CommandQueue* que
 {
     switch (type)
 	{
-	    case OnnxType::Udnie:
-        {
-		    return Init(L"./Resources/Onnx/udnie-9.onnx", dev, queue);
-        }
 	    case OnnxType::WCT2:
         {
-		    return Init(L"./Resources/Onnx/WCT2_dynamic.onnx", dev, queue);
+		    return Init(L"./Resources/Onnx/1x1_Conv.onnx", dev, queue);
         }
 	    case OnnxType::AdaIN:
         {
-		    return Init(L"./Resources/Onnx/adain_end2end.onnx", dev, queue);
+		    return Init(L"./Resources/Onnx/adain_end2end_2inputs_op17.onnx", dev, queue);
         }
 	    case OnnxType::FastNeuralStyle:
         {
-		    //return Init(L"./Resources/Onnx/FHD/rain_princess_opset12_dyn.onnx", dev, queue);
-		    //return Init(L"./Resources/Onnx/FHD/mosaic_opset12_dyn.onnx", dev, queue);
-		    return Init(L"./Resources/Onnx/FHD/udnie_opset12_dyn.onnx", dev, queue);
+		    return Init(L"./Resources/Onnx/FHD/FST_dyn_TheStarryNight.onnx", dev, queue);
         }
 	    case OnnxType::ReCoNet:
         {
-		    return Init(L"./Resources/Onnx/reconet.onnx", dev, queue);
-        }
-	    case OnnxType::BlindVideo:
-        {
-		    return Init(L"./Resources/Onnx/stylize_blindvideo.onnx", dev, queue);
+		    return Init(L"./Resources/Onnx/FHD/ReCoNet_TheStarryNight.onnx", dev, queue);
         }
 	    case OnnxType::Sanet:
         {
-            //https://github.com/dypark86/SANET
-		    return Init(L"./Resources/Onnx/sanet_pipeline_img_ms_dynsim.onnx", dev, queue);
-        }
-        case OnnxType::AdaAttN:
-        {
-            return Init(L"./Resources/Onnx/adaattn_img_512.onnx", dev, queue);
-		}
-
-        case OnnxType::MsgNet:
-        {
-            return Init(L"./Resources/Onnx/msgnet_content_only.onnx", dev, queue);
+		    return Init(L"./Resources/Onnx/sanet_end2end_2inputs_op17.onnx", dev, queue);
         }
 
 	    default:
@@ -120,45 +100,25 @@ void OnnxManager::InitOnnxRunner(const std::wstring& modelPath, ID3D12Device* de
         m_OnnxRunner = std::make_unique<OnnxRunner_AdaIN>();
         m_OnnxType = OnnxType::Sanet;
     }
-    else if (modelPath.find(L"WCT") != std::wstring::npos)
+    else if (modelPath.find(L"Conv") != std::wstring::npos)
     {
         m_OnnxRunner = std::make_unique<OnnxRunner_AdaIN>();
-        m_OnnxType = OnnxType::AdaIN;
+        m_OnnxType = OnnxType::WCT2;
     }
-    else if (modelPath.find(L"msg") != std::wstring::npos)
+    else if (modelPath.find(L"ReCoNet") != std::wstring::npos)
     {
-        m_OnnxRunner = std::make_unique<OnnxRunner_ReCoNet>();
-        m_OnnxType = OnnxType::MsgNet;
-    }
-    else if (modelPath.find(L"blind") != std::wstring::npos)
-    {
-        m_OnnxRunner = std::make_unique<OnnxRunner_BlindVideo>();
-        m_OnnxType = OnnxType::BlindVideo;
-    }
-    else if (modelPath.find(L"reconet") != std::wstring::npos)
-    {
-        m_OnnxRunner = std::make_unique<OnnxRunner_ReCoNet>();
+        m_OnnxRunner = std::make_unique<OnnxRunner_FastNeuralStyle>();
         m_OnnxType = OnnxType::ReCoNet;
-    }
-    else if (modelPath.find(L"adaattn") != std::wstring::npos)
-    {
-        m_OnnxRunner = std::make_unique<OnnxRunner_AdaIN>();
-        m_OnnxType = OnnxType::AdaIN;
     }
     else if (modelPath.find(L"dyn") != std::wstring::npos)
     {
         m_OnnxRunner = std::make_unique<OnnxRunner_FastNeuralStyle>();
-        m_OnnxType = OnnxType::FastNeuralStyle;
+        m_OnnxType = OnnxType::ReCoNet;
     }
     else if (modelPath.find(L"adain") != std::wstring::npos)
     {
         m_OnnxRunner = std::make_unique<OnnxRunner_AdaIN>();
 		m_OnnxType = OnnxType::AdaIN;
-    }
-    else if (modelPath.find(L"udnie") != std::wstring::npos)
-    {
-        m_OnnxRunner = std::make_unique<OnnxRunner_Udnie>();
-        m_OnnxType = OnnxType::Udnie;
     }
     else
     {

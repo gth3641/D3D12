@@ -6,6 +6,41 @@
 #define DX_INPUT InputManager::Get()
 #define KEY_MAX 256
 
+struct CamMove
+{
+    CamMove(float x, float y, float z) : x(x), y(y), z(z)
+    {
+    }
+
+    float x = 0.0f;
+    float y = 0.0f;
+	float z = 0.0f;
+};
+
+struct CamRotate
+{
+    CamRotate(float x, float y)
+        : x(x), y(y)
+    {
+	}
+
+    float x = 0.0f;
+    float y = 0.0f;
+};
+
+
+struct CamWalk
+{
+    CamWalk(CamMove InCamMove, CamRotate InCamRotates)
+		: CamMove(InCamMove), CamRotate(InCamRotates) 
+    {
+	}
+
+    CamMove CamMove;
+    CamRotate CamRotate;
+};
+
+
 class InputManager
 {
 public: // Singleton pattern to ensure only one instance exists 
@@ -31,11 +66,11 @@ public: // Functions
     bool isStateKeyDown(int key);
     bool isToggleKey(int key);
 
-    std::bitset<KEY_MAX> getKeyUp(void) { return _keyUp; }
-    std::bitset<KEY_MAX> getKeyDown(void) { return _keyDown; }
+    std::bitset<KEY_MAX> getKeyUp(void) { return m_keyUp; }
+    std::bitset<KEY_MAX> getKeyDown(void) { return m_keyDown; }
 
-    void setKeyUp(int key, bool state) { _keyUp.set(key, state); }
-    void setKeyDown(int key, bool state) { _keyDown.set(key, state); }
+    void setKeyUp(int key, bool state) { m_keyUp.set(key, state); }
+    void setKeyDown(int key, bool state) { m_keyDown.set(key, state); }
 
     void SetMouseLock();
 
@@ -86,15 +121,29 @@ public: // Functions
         m_ToggleDelegate[vertualKey].RemoveDelegate(object);
     }
 
+	const CamWalk& GetCamWalk(size_t index) const { return m_CamWalks[index]; }
+
+    void InitWalk(int i);
 
 private:
-    std::bitset<KEY_MAX> _keyUp;
-    std::bitset<KEY_MAX> _keyDown;
-    std::bitset<KEY_MAX> _keyToggle;
 
-    bool isMouseLock = false;
+    void CamWalkInit_gallery();
+    void CamWalkInit_sponzaA();
+    void CamWalkInit_San_Miguel();
+    void CamWalkInit_ISCV2();
+
+private:
+    std::bitset<KEY_MAX> m_keyUp;
+    std::bitset<KEY_MAX> m_keyDown;
+    std::bitset<KEY_MAX> m_keyToggle;
+
+    bool m_isMouseLock = false;
 
     std::vector<Delegate> m_ToggleDelegate;
+
+	std::vector<CamWalk> m_CamWalks;
+
+    float m_MoveSpeed = 0.f;
 
 };
 

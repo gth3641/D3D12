@@ -6,8 +6,5 @@ class Object
 public:
 	Object();
 
-
-
-
 };
 

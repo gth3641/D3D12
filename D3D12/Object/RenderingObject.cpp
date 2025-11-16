@@ -9,7 +9,7 @@ RenderingObject::RenderingObject()
 
 RenderingObject::~RenderingObject()
 {
-	delegate.Broadcast();
+	m_Delegate.Broadcast();
 	m_UploadBuffer.Release();
 	m_VertexBuffer.Release();
 }
@@ -94,7 +94,7 @@ Triangle* RenderingObject::GetTriagleByIndex(size_t index)
 	return nullptr;
 }
 
-int RenderingObject::GetVertexCount()
+size_t RenderingObject::GetVertexCount()
 {
 	size_t size = m_Triangle.size();
 	if (size <= 0)

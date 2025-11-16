@@ -4,7 +4,43 @@
 #include "Manager/ImageManager.h"
 #include "Object/RenderingObject3D.h"
 #include "Support/tiny_obj_loader.h"
+#include <cmath> 
 #include <unordered_map>
+#include <algorithm> 
+
+struct Vec3 { float x, y, z; };
+
+struct Mat3 {
+    float m[3][3];
+    Vec3 apply(const Vec3& v) const {
+        return {
+            m[0][0] * v.x + m[0][1] * v.y + m[0][2] * v.z,
+            m[1][0] * v.x + m[1][1] * v.y + m[1][2] * v.z,
+            m[2][0] * v.x + m[2][1] * v.y + m[2][2] * v.z
+        };
+    }
+    static Mat3 rotateX(float rad) {
+        float c = cosf(rad), s = sinf(rad);
+        Mat3 M{};
+        M.m[0][0] = 1;  M.m[0][1] = 0;  M.m[0][2] = 0;
+        M.m[1][0] = 0;  M.m[1][1] = c;  M.m[1][2] = -s;
+        M.m[2][0] = 0;  M.m[2][1] = s;  M.m[2][2] = c;
+        return M;
+    }
+};
+
+static inline Mat3 Identity3() {
+    Mat3 M{};
+    M.m[0][0] = 1; M.m[0][1] = 0; M.m[0][2] = 0;
+    M.m[1][0] = 0; M.m[1][1] = 1; M.m[1][2] = 0;
+    M.m[2][0] = 0; M.m[2][1] = 0; M.m[2][2] = 1;
+    return M;
+}
+
+static inline Mat3 ZupToYup(bool invert = false) {
+    constexpr float HALF_PI = 1.57079632679f; // +90°
+    return Mat3::rotateX(invert ? -HALF_PI : +HALF_PI);
+}
 
 static inline std::string NormalizeSlashes(std::string p) {
     std::replace(p.begin(), p.end(), '\\', '/');
@@ -20,13 +56,14 @@ static inline std::string JoinPath(const std::string& base, const std::string& r
 }
 
 void SponzaModel::Reset() {
-    mSubs.clear();
-    mHeap.Release();
-    mDescInc = 0;
+    m_Subs.clear();
+    m_Heap.Release();
+    m_DescInc = 0;
 }
 
+
 bool SponzaModel::InitFromOBJ(const std::string& objPath, const std::string& baseDir,
-    ID3D12PipelineState* pso, ID3D12RootSignature* rs)
+    ID3D12PipelineState* pso, ID3D12RootSignature* rs, const ObjImportOptions& opts /*= {}*/)
 {
     Reset();
 
@@ -43,7 +80,24 @@ bool SponzaModel::InitFromOBJ(const std::string& objPath, const std::string& bas
         return false;
     }
 
-    // 2) material -> albedo 경로
+    // 1-1) Import 변환 준비
+    const Mat3 R_up = opts.zUpToYUp ? ZupToYup(opts.invertUpRotation) : Identity3();
+
+    auto applyImportXf = [&](Vec3& p, bool isNormal) {
+        // 업축 회전
+        p = R_up.apply(p);
+
+        // RH -> LH 변환: Z 반전
+        if (opts.toLeftHanded) {
+            p.z = -p.z;
+        }
+
+        if (!isNormal && opts.uniformScale != 1.0f) {
+            p.x *= opts.uniformScale; p.y *= opts.uniformScale; p.z *= opts.uniformScale;
+        }
+        };
+
+    // 2) material -> albedo
     std::vector<std::string> matAlbedo(materials.size());
     for (size_t m = 0; m < materials.size(); ++m) {
         const auto& kd = materials[m].diffuse_texname; // map_Kd
@@ -103,19 +157,33 @@ bool SponzaModel::InitFromOBJ(const std::string& objPath, const std::string& bas
                     Vtx v{};
                     // pos
                     if (ix.vertex_index >= 0) {
-                        v.pos.x = attrib.vertices[3 * ix.vertex_index + 0];
-                        v.pos.y = attrib.vertices[3 * ix.vertex_index + 1];
-                        v.pos.z = attrib.vertices[3 * ix.vertex_index + 2];
+                        Vec3 p{
+                            attrib.vertices[3 * ix.vertex_index + 0],
+                            attrib.vertices[3 * ix.vertex_index + 1],
+                            attrib.vertices[3 * ix.vertex_index + 2]
+                        };
+                        applyImportXf(p, /*isNormal=*/false);
+                        v.pos = { p.x, p.y, p.z };
                     }
+
                     // nrm
                     if (ix.normal_index >= 0) {
-                        v.nrm.x = attrib.normals[3 * ix.normal_index + 0];
-                        v.nrm.y = attrib.normals[3 * ix.normal_index + 1];
-                        v.nrm.z = attrib.normals[3 * ix.normal_index + 2];
+                        Vec3 n{
+                            attrib.normals[3 * ix.normal_index + 0],
+                            attrib.normals[3 * ix.normal_index + 1],
+                            attrib.normals[3 * ix.normal_index + 2]
+                        };
+                        applyImportXf(n, /*isNormal=*/true);
+                        const float len = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
+                        if (len > 1e-8f) { n.x /= len; n.y /= len; n.z /= len; }
+                        v.nrm = { n.x, n.y, n.z };
                     }
                     else {
-                        v.nrm = { 0,1,0 };
+                        Vec3 n{ 0,1,0 };
+                        applyImportXf(n, /*isNormal=*/true);
+                        v.nrm = { n.x, n.y, n.z };
                     }
+
                     // uv
                     if (ix.texcoord_index >= 0) {
                         v.uv.x = attrib.texcoords[2 * ix.texcoord_index + 0];
@@ -131,24 +199,32 @@ bool SponzaModel::InitFromOBJ(const std::string& objPath, const std::string& bas
                 }
                 S.indices.push_back(dstIndex);
             }
+
+            // RH -> LH면 와인딩 반전
+            if (opts.toLeftHanded && fv == 3) {
+                auto& idx = S.indices;
+                const size_t base = idx.size() - 3;
+                std::swap(idx[base + 1], idx[base + 2]);
+            }
+
             off += fv;
         }
     }
 
     if (subs.empty()) return false;
 
-    // 4) 디스크립터 힙: "사용된 머티리얼 개수 × 2"
+    // 4) 디스크립터 힙
     ID3D12Device* dev = DX_CONTEXT.GetDevice();
-    const size_t usedMatCount = mat2sub.size(); // (-1 포함 가능)
+    const size_t usedMatCount = mat2sub.size();
     D3D12_DESCRIPTOR_HEAP_DESC h{};
     h.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     h.NumDescriptors = (UINT)(usedMatCount * 2);         // t0:albedo, t1:shadow
     h.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-    if (FAILED(dev->CreateDescriptorHeap(&h, IID_PPV_ARGS(&mHeap)))) return false;
+    if (FAILED(dev->CreateDescriptorHeap(&h, IID_PPV_ARGS(&m_Heap)))) return false;
 
-    mDescInc = dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-    auto baseCPU = mHeap->GetCPUDescriptorHandleForHeapStart();
-    auto baseGPU = mHeap->GetGPUDescriptorHandleForHeapStart();
+    m_DescInc = dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    auto baseCPU = m_Heap->GetCPUDescriptorHandleForHeapStart();
+    auto baseGPU = m_Heap->GetGPUDescriptorHandleForHeapStart();
 
     // 섀도우맵 SRV 템플릿
     D3D12_SHADER_RESOURCE_VIEW_DESC shadowSRV{};
@@ -156,10 +232,10 @@ bool SponzaModel::InitFromOBJ(const std::string& objPath, const std::string& bas
     shadowSRV.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     shadowSRV.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     shadowSRV.Texture2D.MipLevels = 1;
-    ID3D12Resource* shadowTex = DX_MANAGER.GetShadowMap(); // DirectXManager에 getter 있어야 함
+    ID3D12Resource* shadowTex = DX_MANAGER.GetShadowMap();
 
-    // 5) 머티리얼별 디스크립터 슬롯 할당(한 번만)
-    struct MatSlots { UINT t0t1Base; std::shared_ptr<Image> keep; }; // keep: 텍스처 생존 보장
+    // 5) 머티리얼별 디스크립터 슬롯 할당
+    struct MatSlots { UINT t0t1Base; std::shared_ptr<Image> keep; };
     std::unordered_map<int, MatSlots> matSlots; matSlots.reserve(usedMatCount);
 
     UINT nextPair = 0;
@@ -181,7 +257,6 @@ bool SponzaModel::InitFromOBJ(const std::string& objPath, const std::string& bas
         // 1) 로드
         auto albedoImg = sm.ro->GetImage();
 
-        // 2) GPU 업로드 보장 (중요!)
         if (albedoImg && !albedoImg->GetTexture()) {
             albedoImg->UploadTextureBuffer();
         }
@@ -189,14 +264,13 @@ bool SponzaModel::InitFromOBJ(const std::string& objPath, const std::string& bas
         ID3D12Resource* albedoRes = (albedoImg ? albedoImg->GetTexture() : nullptr);
         if (!albedoRes) {
             OutputDebugStringA(("[Sponza] Missing or not uploaded texture: " + albedoPath + "\n").c_str());
-            // 최후 폴백: 1x1 white라도 제대로 올려서 SRV 만들기
             auto whiteImg = DX_IMAGE.GetImage("./Resources/White1x1.png");
             if (whiteImg && !whiteImg->GetTexture()) whiteImg->UploadTextureBuffer();
             if (whiteImg && whiteImg->GetTexture()) { albedoImg = whiteImg; albedoRes = whiteImg->GetTexture(); }
         }
 
         if (albedoRes) {
-            s.keep = albedoImg; // lifetime 유지
+            s.keep = albedoImg;
             D3D12_SHADER_RESOURCE_VIEW_DESC albedoSRV{};
             auto td = albedoRes->GetDesc();
             albedoSRV.Format = td.Format;
@@ -204,32 +278,22 @@ bool SponzaModel::InitFromOBJ(const std::string& objPath, const std::string& bas
             albedoSRV.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
             albedoSRV.Texture2D.MipLevels = td.MipLevels ? td.MipLevels : 1;
 
-            D3D12_CPU_DESCRIPTOR_HANDLE dstAlbedo = baseCPU; dstAlbedo.ptr += SIZE_T(s.t0t1Base + 0) * mDescInc;
-            D3D12_CPU_DESCRIPTOR_HANDLE dstShadow = baseCPU; dstShadow.ptr += SIZE_T(s.t0t1Base + 1) * mDescInc;
+            D3D12_CPU_DESCRIPTOR_HANDLE dstAlbedo = baseCPU; dstAlbedo.ptr += SIZE_T(s.t0t1Base + 0) * m_DescInc;
+            D3D12_CPU_DESCRIPTOR_HANDLE dstShadow = baseCPU; dstShadow.ptr += SIZE_T(s.t0t1Base + 1) * m_DescInc;
 
             dev->CreateShaderResourceView(albedoRes, &albedoSRV, dstAlbedo);
             dev->CreateShaderResourceView(shadowTex, &shadowSRV, dstShadow);
         }
-        else
-        {
-            return s;
-        }
-        // albedoRes가 결국에도 없다면 이 머티리얼은 샘플=0(검정)일 수밖에. 로그로 추적.
-
         matSlots.emplace(matID, s);
         return s;
         };
 
     // 6) GPU 업로드 + 서브메시 생성
-    mSubs.clear(); mSubs.reserve(subs.size());
+    m_Subs.clear(); m_Subs.reserve(subs.size());
     for (auto& C : subs) {
         SponzaSubmesh sm;
         sm.ro = std::make_unique<RenderingObject3D>();
-        // 내부에서 실제로 쓰는 SRV는 우리가 바인딩하니, Init의 텍스처 인자는 폴백만 넣어도 OK
-        //if (!sm.ro->Init("./Resources/White1x1.png", /*dummy*/ 0, pso, rs)) 
-        //    return false;
 
-        // 인덱스 형식 자동 선택
         if (C.verts.size() < 65536) {
             std::vector<uint16_t> i16(C.indices.begin(), C.indices.end());
             if (!sm.ro->InitGeometry(C.verts.data(),
@@ -248,19 +312,19 @@ bool SponzaModel::InitFromOBJ(const std::string& objPath, const std::string& bas
                 DXGI_FORMAT_R32_UINT)) return false;
         }
 
-        // 머티리얼 슬롯 연결(그리고 텍스처 keepAlive)
         MatSlots sl = allocSlotsForMat(sm, C.mat);
         sm.keepAlive = sl.keep;
         sm.tableBase = baseGPU;
-        int asd = SIZE_T(sl.t0t1Base);
+        sm.tableBase.ptr += SIZE_T(sl.t0t1Base) * m_DescInc;
 
-        sm.tableBase.ptr += SIZE_T(sl.t0t1Base) * mDescInc;
-
-        mSubs.emplace_back(std::move(sm));
+        m_Subs.emplace_back(std::move(sm));
     }
 
+    ID3D12GraphicsCommandList7* cmd = DX_CONTEXT.InitCommandList();
+    DX_CONTEXT.ExecuteCommandList();
     return true;
 }
+
 
 void SponzaModel::Render(ID3D12GraphicsCommandList7* cmd,
     const Camera& cam, float aspect,
@@ -268,19 +332,18 @@ void SponzaModel::Render(ID3D12GraphicsCommandList7* cmd,
     D3D12_CPU_DESCRIPTOR_HANDLE& dsv,
     float angle)
 {
-    ID3D12DescriptorHeap* heaps[] = { mHeap.Get() };
-    cmd->SetDescriptorHeaps(1, heaps);   // 꼭 여기서 바인딩
+    ID3D12DescriptorHeap* heaps[] = { m_Heap.Get() };
+    cmd->SetDescriptorHeaps(1, heaps);  
 
-    for (auto& sm : mSubs) {
-        DX_MANAGER.mObjSrvGPU = sm.tableBase; 
+    for (auto& sm : m_Subs) {
+        DX_MANAGER.SetObjSrvGPU(sm.tableBase);
         sm.ro->Rendering(cmd, cam, aspect, rtv, dsv, angle);
     }
 }
 
 void SponzaModel::UploadGPUResource(ID3D12GraphicsCommandList7* cmdList)
 {
-    // 1) 스폰자 각 서브메시의 keepAlive(Image)를 대상으로
-    for (auto& sm : mSubs) {
+    for (auto& sm : m_Subs) {
         if (!sm.keepAlive) continue;
         sm.ro->UploadGPUResource(cmdList);
     }

@@ -152,20 +152,12 @@
     <ClCompile Include="Object\RenderingObject3D.cpp" />
     <ClCompile Include="OnnxRunner\OnnxRunnerInterface.cpp" />
     <ClCompile Include="OnnxRunner\OnnxRunner_AdaIN.cpp" />
-    <ClCompile Include="OnnxRunner\OnnxRunner_BlindVideo.cpp" />
     <ClCompile Include="OnnxRunner\OnnxRunner_FastNeuralStyle.cpp" />
-    <ClCompile Include="OnnxRunner\OnnxRunner_ReCoNet.cpp" />
-    <ClCompile Include="OnnxRunner\OnnxRunner_Sanet.cpp" />
-    <ClCompile Include="OnnxRunner\OnnxRunner_Udnie.cpp" />
     <ClCompile Include="Support\Image.cpp" />
     <ClCompile Include="Support\ImageLoader.cpp" />
     <ClCompile Include="Support\Onnx\OnnxService.cpp" />
     <ClCompile Include="Support\Onnx\OnnxService_AdaIN.cpp" />
-    <ClCompile Include="Support\Onnx\OnnxService_BlindVideo.cpp" />
     <ClCompile Include="Support\Onnx\OnnxService_FastNeuralStyle.cpp" />
-    <ClCompile Include="Support\Onnx\OnnxService_ReCoNet.cpp" />
-    <ClCompile Include="Support\Onnx\OnnxService_Sanet.cpp" />
-    <ClCompile Include="Support\Onnx\OnnxService_Udnie.cpp" />
     <ClCompile Include="Support\Shader.cpp" />
     <ClCompile Include="Support\SponzaLoader.cpp" />
     <ClCompile Include="Support\SponzaModel.cpp" />
@@ -183,21 +175,13 @@
     <ClInclude Include="Object\RenderingObject3D.h" />
     <ClInclude Include="OnnxRunner\OnnxRunnerInterface.h" />
     <ClInclude Include="OnnxRunner\OnnxRunner_AdaIN.h" />
-    <ClInclude Include="OnnxRunner\OnnxRunner_BlindVideo.h" />
     <ClInclude Include="OnnxRunner\OnnxRunner_FastNeuralStyle.h" />
-    <ClInclude Include="OnnxRunner\OnnxRunner_ReCoNet.h" />
-    <ClInclude Include="OnnxRunner\OnnxRunner_Sanet.h" />
-    <ClInclude Include="OnnxRunner\OnnxRunner_Udnie.h" />
     <ClInclude Include="Support\ComPointer.h" />
     <ClInclude Include="Support\Image.h" />
     <ClInclude Include="Support\ImageLoader.h" />
     <ClInclude Include="Support\Onnx\OnnxService.h" />
     <ClInclude Include="Support\Onnx\OnnxService_AdaIN.h" />
-    <ClInclude Include="Support\Onnx\OnnxService_BlindVideo.h" />
     <ClInclude Include="Support\Onnx\OnnxService_FastNeuralStyle.h" />
-    <ClInclude Include="Support\Onnx\OnnxService_ReCoNet.h" />
-    <ClInclude Include="Support\Onnx\OnnxService_Sanet.h" />
-    <ClInclude Include="Support\Onnx\OnnxService_Udnie.h" />
     <ClInclude Include="Support\Shader.h" />
     <ClInclude Include="Support\SponzaLoader.h" />
     <ClInclude Include="Support\SponzaModel.h" />
@@ -217,24 +201,6 @@
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">6.0</ShaderModel>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.0</ShaderModel>
     </FxCompile>
-    <FxCompile Include="Shaders\cs_copy_tex_to_tex2d.hlsl">
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
-    </FxCompile>
-    <FxCompile Include="Shaders\cs_debug_view_pre_chw.hlsl">
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
-    </FxCompile>
-    <FxCompile Include="Shaders\cs_debug_fill_onnxtex.hlsl">
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
-    </FxCompile>
     <FxCompile Include="Shaders\cs_postprocess.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
@@ -247,12 +213,6 @@
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
     </FxCompile>
-    <FxCompile Include="Shaders\cs_rgba_to_nchw.hlsl">
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
-    </FxCompile>
     <FxCompile Include="Shaders\PixelShader.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">6.0</ShaderModel>
@@ -260,12 +220,6 @@
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.0</ShaderModel>
     </FxCompile>
     <FxCompile Include="Shaders\ps_blit.hlsl">
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
-    </FxCompile>
-    <FxCompile Include="Shaders\ps_green.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
@@ -286,12 +240,6 @@
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.0</ShaderModel>
     </FxCompile>
     <FxCompile Include="Shaders\vs_blit.hlsl">
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Vertex</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
-    </FxCompile>
-    <FxCompile Include="Shaders\vs_green.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Vertex</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">5.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>

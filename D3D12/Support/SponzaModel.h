@@ -10,9 +10,16 @@
 struct Camera;
 
 struct SponzaSubmesh {
-    std::unique_ptr<RenderingObject3D> ro;   // 지오메트리/드로우
-    D3D12_GPU_DESCRIPTOR_HANDLE tableBase{}; // 이 서브가 참조할 (t0,t1) 디스크립터 테이블 베이스
-    std::shared_ptr<Image> keepAlive;        // 알베도 텍스처 생존 보장
+    std::unique_ptr<RenderingObject3D> ro;  
+    D3D12_GPU_DESCRIPTOR_HANDLE tableBase{};
+    std::shared_ptr<Image> keepAlive;       
+};
+
+struct ObjImportOptions {
+    bool zUpToYUp = true;      
+    bool toLeftHanded = true;  
+    float uniformScale = 1.0f;
+    bool invertUpRotation = false;
 };
 
 class SponzaModel {
@@ -20,7 +27,8 @@ public:
     bool InitFromOBJ(const std::string& objPath,
         const std::string& baseDir,
         ID3D12PipelineState* pso,
-        ID3D12RootSignature* rs);
+        ID3D12RootSignature* rs,
+        const ObjImportOptions& opts = {});
 
     void Render(ID3D12GraphicsCommandList7* cmd,
         const Camera& cam, float aspect,
@@ -33,7 +41,7 @@ public:
     void UploadGPUResource(ID3D12GraphicsCommandList7* cmdList);
 
 private:
-    std::vector<SponzaSubmesh> mSubs;
-    ComPointer<ID3D12DescriptorHeap> mHeap;  // SRV 힙 (서브메쉬*2 슬롯)
-    UINT mDescInc = 0;                       // 디스크립터 증가치 캐시
+    std::vector<SponzaSubmesh> m_Subs;
+    ComPointer<ID3D12DescriptorHeap> m_Heap;  
+    UINT m_DescInc = 0;                
 };

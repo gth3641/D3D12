@@ -7,8 +7,11 @@
 #include <map>
 #include <vector>
 
-
 #define DX_WINDOW DXWindow::Get()
+#define WINDOW_X 512	
+#define WINDOW_Y 512
+
+extern int FrameNum;
 
 class DXWindow
 {
@@ -25,6 +28,8 @@ public:
 
 	D3D12_VIEWPORT CreateViewport();
 	RECT CreateScissorRect();
+
+	void SetShutdown() { m_shouldClose = true; }
 
 	inline bool ShouldClose() const			{ return m_shouldClose; }
 	inline bool ShouldResize() const		{ return m_shouldResize; }
@@ -85,8 +90,8 @@ private:
 
 	bool m_shouldResize = false;
 	bool m_shouldChangeOnnx = false;
-	UINT m_width = 1920;
-	UINT m_height = 1080;
+	UINT m_width = WINDOW_X;
+	UINT m_height = WINDOW_Y;
 
 	bool m_isFullscreen = false;
 

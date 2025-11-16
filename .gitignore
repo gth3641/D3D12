@@ -367,3 +367,5 @@ FodyWeavers.xsd
 
 # Resources
 Resources/
+*.png
+*.jpg

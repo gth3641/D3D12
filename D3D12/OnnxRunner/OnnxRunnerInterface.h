@@ -15,10 +15,7 @@ class OnnxRunnerInterface
 {
 
 protected:
-    // 8의 배수로 내림
     inline int AlignDown8(int v) { return (v / 8) * 8; }
-
-	// 동적으로 Input/Output shape 채우기 (NCHW)
     void FillDynamicNCHW(std::vector<int64_t>& s, int N, int C, int H, int W)
     {
         if (s.size() < 4) s = { N, C, H, W };
@@ -80,20 +77,20 @@ protected: // Variables
 
 protected:
     // 모델 IO 이름
-    std::string m_InNameContent; // input[0] : "content"
-    std::string m_InNameStyle;   // input[1] : "style"
-    std::string m_OutName;       // output[0]: "stylized"
+    std::string m_InNameContent; 
+    std::string m_InNameStyle;   
+    std::string m_OutName;       
 
     // 모델 IO shape 
-    std::vector<int64_t> m_InShapeContent; // [-1,3,-1,-1] → [1,3,Hc,Wc]
-    std::vector<int64_t> m_InShapeStyle;   // [-1,3,-1,-1] → [1,3,Hs,Ws]
-    std::vector<int64_t> m_OutShape;       // [-1,3,-1,-1] → [1,3,Ho,Wo]
+    std::vector<int64_t> m_InShapeContent; 
+    std::vector<int64_t> m_InShapeStyle;   
+    std::vector<int64_t> m_OutShape;       
 
     // GPU 버퍼 + DML allocation 핸들
-    ComPointer<ID3D12Resource> m_InputBufContent; // content NCHW FP32
-    ComPointer<ID3D12Resource> m_InputBufStyle;   // style   NCHW FP32
-    ComPointer<ID3D12Resource> m_OutputBuf;       // output  NCHW FP32
-    void* m_InAllocContent = nullptr; // DML GPU allocation handle
+    ComPointer<ID3D12Resource> m_InputBufContent; 
+    ComPointer<ID3D12Resource> m_InputBufStyle;   
+    ComPointer<ID3D12Resource> m_OutputBuf;       
+    void* m_InAllocContent = nullptr; 
     void* m_InAllocStyle = nullptr;
     void* m_OutAlloc = nullptr;
 

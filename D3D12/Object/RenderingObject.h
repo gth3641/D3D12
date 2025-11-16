@@ -26,11 +26,10 @@ public: // Functions
 	ComPointer<ID3D12Resource2>& GetUploadBuffer() { return m_UploadBuffer; }
 	ComPointer<ID3D12Resource2>& GetVertexBuffer() { return m_VertexBuffer; }
 
-	int GetVertexCount();
+	size_t GetVertexCount();
 	void AddTriangle(const Vertex* vertex, size_t size);
 	std::vector<Triangle>& GetTriangle() { return m_Triangle; }
 	void UploadCPUResource(bool textureUpdate = true, bool vertexUpdate = true);
-
 
 	void SetVbDirty(bool dirty) { mVbDirty = dirty; }
 	void SetTexDirty(bool dirty) { mTexDirty = dirty; }
@@ -51,20 +50,16 @@ protected: // Variables
 	ComPointer<ID3D12Resource2> m_UploadBuffer;
 	ComPointer<ID3D12Resource2> m_VertexBuffer;
 
-	//INT64 m_TestIndex = 0;
-
 	D3D12_PLACED_SUBRESOURCE_FOOTPRINT m_TexFootprint{};
 	UINT   m_TexNumRows = 0;
-	UINT64 m_TexRowSizeInBytes = 0;  // = width * BPP (패딩 없음)
-	UINT64 m_TexUploadSize = 0;      // 전체 텍스처 업로드 크기(패딩 포함)
-	UINT64 m_GeomOffsetInUpload = 0; // 업로드 버퍼 내에서 VB가 시작되는 오프셋
-	UINT64 m_VBSize = 0;             // 전체 버텍스 데이터 바이트 수
+	UINT64 m_TexRowSizeInBytes = 0;  
+	UINT64 m_TexUploadSize = 0;      
+	UINT64 m_GeomOffsetInUpload = 0; 
+	UINT64 m_VBSize = 0;             
 
-	// 상태 추적
 	D3D12_RESOURCE_STATES mVBState = D3D12_RESOURCE_STATE_COPY_DEST;
 	D3D12_RESOURCE_STATES mTexState = D3D12_RESOURCE_STATE_COPY_DEST;
 
-	// 더티 플래그(업로드가 필요할 때만 true)
 	bool mVbDirty = true;
 	bool mTexDirty = true;
 
@@ -73,8 +68,7 @@ protected: // Variables
 	std::vector<UINT>  m_MipNumRowsV;
 	std::vector<UINT64> m_MipRowSizeInBytesV;
 
-
-	Delegate delegate;
+	Delegate m_Delegate;
 
 };
 

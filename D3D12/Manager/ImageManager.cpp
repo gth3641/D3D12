@@ -19,20 +19,21 @@ UINT64 ImageManager::Load(const std::filesystem::path& imagePath)
 {
 	const std::string key = imagePath.string();
 
-	// 이미 인덱스가 있으면 재사용
 	auto it = m_PathToSrvIndex.find(key);
 	if (it != m_PathToSrvIndex.end())
 		return it->second;
 
-	// Image 객체 캐시도 유지(기존 로직)
-	auto imgPtr = GetImage(imagePath); // 없으면 로드
+	auto imgPtr = GetImage(imagePath); 
 	if (!imgPtr) 
+	{ 
 		return m_WhiteIndex;
-
-	// 텍스처에서 SRV 생성
-	ID3D12Resource* tex = imgPtr->GetTexture(); // Image 클래스에 맞게
-	if (!tex) 
+	}
+		
+	ID3D12Resource* tex = imgPtr->GetTexture(); 
+	if (!tex)
+	{
 		return m_WhiteIndex;
+	}
 
 	UINT64 idx = CreateSRVForTexture(tex);
 	m_PathToSrvIndex.emplace(key, idx);
@@ -63,6 +64,7 @@ void ImageManager::ReturnTextureIndex(Image* image)
 	}
 
 	m_MinHeap.push(image->GetIndex());
+
 }
 
 std::shared_ptr<Image> ImageManager::GetImage(const std::filesystem::path& imagePath)

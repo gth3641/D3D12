@@ -84,16 +84,7 @@
     <ClCompile Include="OnnxRunner\OnnxRunner_AdaIN.cpp">
       <Filter>소스 파일\Onnx\Runner</Filter>
     </ClCompile>
-    <ClCompile Include="OnnxRunner\OnnxRunner_BlindVideo.cpp">
-      <Filter>소스 파일\Onnx\Runner</Filter>
-    </ClCompile>
     <ClCompile Include="OnnxRunner\OnnxRunner_FastNeuralStyle.cpp">
-      <Filter>소스 파일\Onnx\Runner</Filter>
-    </ClCompile>
-    <ClCompile Include="OnnxRunner\OnnxRunner_ReCoNet.cpp">
-      <Filter>소스 파일\Onnx\Runner</Filter>
-    </ClCompile>
-    <ClCompile Include="OnnxRunner\OnnxRunner_Udnie.cpp">
       <Filter>소스 파일\Onnx\Runner</Filter>
     </ClCompile>
     <ClCompile Include="OnnxRunner\OnnxRunnerInterface.cpp">
@@ -105,23 +96,8 @@
     <ClCompile Include="Support\Onnx\OnnxService_AdaIN.cpp">
       <Filter>소스 파일\Onnx\Service</Filter>
     </ClCompile>
-    <ClCompile Include="Support\Onnx\OnnxService_BlindVideo.cpp">
-      <Filter>소스 파일\Onnx\Service</Filter>
-    </ClCompile>
     <ClCompile Include="Support\Onnx\OnnxService_FastNeuralStyle.cpp">
       <Filter>소스 파일\Onnx\Service</Filter>
-    </ClCompile>
-    <ClCompile Include="Support\Onnx\OnnxService_ReCoNet.cpp">
-      <Filter>소스 파일\Onnx\Service</Filter>
-    </ClCompile>
-    <ClCompile Include="Support\Onnx\OnnxService_Udnie.cpp">
-      <Filter>소스 파일\Onnx\Service</Filter>
-    </ClCompile>
-    <ClCompile Include="Support\Onnx\OnnxService_Sanet.cpp">
-      <Filter>소스 파일\Onnx\Service</Filter>
-    </ClCompile>
-    <ClCompile Include="OnnxRunner\OnnxRunner_Sanet.cpp">
-      <Filter>소스 파일\Onnx\Runner</Filter>
     </ClCompile>
     <ClCompile Include="Support\SponzaLoader.cpp">
       <Filter>소스 파일</Filter>
@@ -173,25 +149,13 @@
     <ClInclude Include="Object\RenderingObject3D.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="Support\Onnx\OnnxService_Udnie.h">
-      <Filter>헤더 파일\Onnx\Service</Filter>
-    </ClInclude>
     <ClInclude Include="Support\Onnx\OnnxService.h">
       <Filter>헤더 파일\Onnx\Service</Filter>
     </ClInclude>
     <ClInclude Include="Support\Onnx\OnnxService_AdaIN.h">
       <Filter>헤더 파일\Onnx\Service</Filter>
     </ClInclude>
-    <ClInclude Include="Support\Onnx\OnnxService_BlindVideo.h">
-      <Filter>헤더 파일\Onnx\Service</Filter>
-    </ClInclude>
     <ClInclude Include="Support\Onnx\OnnxService_FastNeuralStyle.h">
-      <Filter>헤더 파일\Onnx\Service</Filter>
-    </ClInclude>
-    <ClInclude Include="Support\Onnx\OnnxService_ReCoNet.h">
-      <Filter>헤더 파일\Onnx\Service</Filter>
-    </ClInclude>
-    <ClInclude Include="Support\Onnx\OnnxService_Sanet.h">
       <Filter>헤더 파일\Onnx\Service</Filter>
     </ClInclude>
     <ClInclude Include="OnnxRunner\OnnxRunnerInterface.h">
@@ -200,16 +164,7 @@
     <ClInclude Include="OnnxRunner\OnnxRunner_AdaIN.h">
       <Filter>헤더 파일\Onnx\Runner</Filter>
     </ClInclude>
-    <ClInclude Include="OnnxRunner\OnnxRunner_BlindVideo.h">
-      <Filter>헤더 파일\Onnx\Runner</Filter>
-    </ClInclude>
     <ClInclude Include="OnnxRunner\OnnxRunner_FastNeuralStyle.h">
-      <Filter>헤더 파일\Onnx\Runner</Filter>
-    </ClInclude>
-    <ClInclude Include="OnnxRunner\OnnxRunner_ReCoNet.h">
-      <Filter>헤더 파일\Onnx\Runner</Filter>
-    </ClInclude>
-    <ClInclude Include="OnnxRunner\OnnxRunner_Udnie.h">
       <Filter>헤더 파일\Onnx\Runner</Filter>
     </ClInclude>
     <ClInclude Include="Manager\ImageManager.h">
@@ -223,9 +178,6 @@
     </ClInclude>
     <ClInclude Include="Manager\DirectXManager.h">
       <Filter>헤더 파일\Manager</Filter>
-    </ClInclude>
-    <ClInclude Include="OnnxRunner\OnnxRunner_Sanet.h">
-      <Filter>헤더 파일\Onnx\Runner</Filter>
     </ClInclude>
     <ClInclude Include="Support\SponzaLoader.h">
       <Filter>헤더 파일</Filter>
@@ -256,28 +208,10 @@
     <FxCompile Include="Shaders\blit.hlsl">
       <Filter>소스 파일\Shader</Filter>
     </FxCompile>
-    <FxCompile Include="Shaders\cs_rgba_to_nchw.hlsl">
-      <Filter>소스 파일\Shader</Filter>
-    </FxCompile>
     <FxCompile Include="Shaders\ps_blit.hlsl">
       <Filter>소스 파일\Shader</Filter>
     </FxCompile>
     <FxCompile Include="Shaders\vs_blit.hlsl">
-      <Filter>소스 파일\Shader</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\ps_green.hlsl">
-      <Filter>소스 파일\Shader</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\vs_green.hlsl">
-      <Filter>소스 파일\Shader</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\cs_copy_tex_to_tex2d.hlsl">
-      <Filter>소스 파일\Shader</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\cs_debug_view_pre_chw.hlsl">
-      <Filter>소스 파일\Shader</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\cs_debug_fill_onnxtex.hlsl">
       <Filter>소스 파일\Shader</Filter>
     </FxCompile>
   </ItemGroup>
@@ -286,6 +220,8 @@
       <Filter>소스 파일\Shader</Filter>
     </None>
     <None Include="packages.config" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime_providers_shared.dll" />
     <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />
     <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime_providers_shared.dll" />
     <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />

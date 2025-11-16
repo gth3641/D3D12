@@ -55,8 +55,8 @@ bool DXWindow::Init()
 		WS_OVERLAPPEDWINDOW | WS_VISIBLE, 
 		monitorInfo.rcWork.left + 100,
 		monitorInfo.rcWork.top + 100,
-		1920, 
-		1080, 
+		WINDOW_X,
+		WINDOW_Y,
 		nullptr, 
 		nullptr, 
 		wcex.hInstance, 
@@ -70,8 +70,8 @@ bool DXWindow::Init()
 	DXGI_SWAP_CHAIN_DESC1 swd{};
 	DXGI_SWAP_CHAIN_FULLSCREEN_DESC sfd{};
 
-	swd.Width = 1920;
-	swd.Height = 1080;
+	swd.Width = WINDOW_X;
+	swd.Height = WINDOW_Y;
 	swd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 	swd.Stereo = false;
 	swd.SampleDesc.Count = 1;
@@ -436,6 +436,14 @@ void DXWindow::SetMouseLock()
 
 	if (m_mouseLock == true)
 	{
+		if (FrameNum >= 0)
+		{
+			m_mouseLock = false;
+			ClipCursor(nullptr);
+			while (ShowCursor(TRUE) < 0) {}
+			return;
+		}
+
 		RECT cr;
 		if (GetClientRect(m_window, &cr))
 		{
@@ -465,6 +473,8 @@ void DXWindow::SetMouseLock()
 	}
 
 }
+
+
 
 void DXWindow::LogicUpdate(float deltaTime)
 {
@@ -572,3 +582,4 @@ void DXWindow::MouseUpdate(float deltaTime)
 		}
 	}
 }
+

@@ -31,8 +31,6 @@ public: // Singleton pattern to ensure only one instance exists
 public:
     OnnxManager() = default;
 
-public: // Static & Override
-  
 public: // Functions
 	bool Init(OnnxType type, ID3D12Device* dev, ID3D12CommandQueue* queue);
     bool PrepareIO(ID3D12Device* dev, UINT contentW, UINT contentH, UINT styleW, UINT styleH);
@@ -65,8 +63,8 @@ private:
     std::unique_ptr<OnnxRunnerInterface> m_OnnxRunner = nullptr;
 
 	bool m_Initialized = false;
-	OnnxType m_OnnxType = OnnxType::None;
 
+	OnnxType m_OnnxType = OnnxType::None;
     OnnxType m_ChangeOnnxType = OnnxType::AdaIN;
 };
 

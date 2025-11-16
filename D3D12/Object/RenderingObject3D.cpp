@@ -78,7 +78,7 @@ void RenderingObject3D::Rendering(
 	cmd->SetGraphicsRoot32BitConstants(0, 52, b0, 0);
 
 	// PS: t0=albedo, t1=shadow (RenderOffscreen¿¡¼­ Èü/º£ÀÌ½º ¼³Á¤µÊ)
-	cmd->SetGraphicsRootDescriptorTable(1, DX_MANAGER.mObjSrvGPU);
+	cmd->SetGraphicsRootDescriptorTable(1, DX_MANAGER.GetObjSrvGPU());
 
 	cmd->DrawIndexedInstanced(m_IndexCount, 1, 0, 0, 0);
 }
